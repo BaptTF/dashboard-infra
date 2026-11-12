@@ -72,6 +72,7 @@ function ConsumptionPage() {
     lastSuccessAt: report?.fetchedAt ? new Date(report.fetchedAt).getTime() : null,
     stale: reportQuery.isError,
     failed: reportQuery.isError,
+    loading: reportQuery.isPending && report === undefined,
     source: 'consommation',
   })
 

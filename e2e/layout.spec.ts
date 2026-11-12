@@ -136,7 +136,7 @@ test('mobile header shows a short freshness label and aligned KPI titles', async
   // The consumption page has a healthy collection, unlike the nominal fixture
   // where one OpenCode subscription deliberately fails.
   await gotoHydrated(page, '/consommation?window=1m&source=all')
-  await expect(page.locator('header').getByText('À jour', { exact: true })).toBeVisible()
+  await expect(page.locator('header').getByText(/^À jour(?: · .+)?$/)).toBeVisible()
   await gotoHydrated(page, '/?window=monthly&history=30d')
   const title = page.getByText('Maillon faible', { exact: true })
   const minHeight = await title.evaluate((element) => getComputedStyle(element).minHeight)

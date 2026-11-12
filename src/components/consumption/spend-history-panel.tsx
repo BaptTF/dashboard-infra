@@ -40,6 +40,7 @@ export function SpendHistoryPanel({
       downsample(series.points).map((point) => [
         <span
           key={`${series.virtualKey}-${point.timestamp}`}
+          className="whitespace-nowrap"
           title={formatParisDateTime(point.timestamp * 1000)}
         >
           {formatParisDateTimeCompact(point.timestamp * 1000)}

@@ -71,6 +71,7 @@ export function QuotaHistoryPanel({
     downsample(entry.points).map((point) => [
       <span
         key={`${entry.provider}-${entry.subscription}-${entry.quota}-${point.timestamp}`}
+        className="whitespace-nowrap"
         title={formatParisDateTime(point.timestamp * 1000)}
       >
         {formatParisDateTimeCompact(point.timestamp * 1000)}

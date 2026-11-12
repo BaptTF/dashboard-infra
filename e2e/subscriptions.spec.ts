@@ -10,6 +10,10 @@ test('compact subscriptions page keeps weakest link, real quotas and OpenCode we
   await expect(page.getByRole('heading', { name: /OpenCode/ }).first()).toBeVisible()
   // The separator is explicit: "OpenCode · A", never a run-together label.
   await expect(page.getByText('OpenCode · A', { exact: true }).first()).toBeVisible()
+  // The weakest-link hint names the chosen quota, not only provider/subscription.
+  await expect(page.getByText(/OpenCode · A — Total · Hebdomadaire/).first()).toBeVisible()
+  // The dry-day card names the quota that owns the maximum projection.
+  await expect(page.getByText(/Projection maximale · OpenCode · .+ · Mensuel/)).toBeVisible()
 
   // The duplicated top-level KPI cards and the separate weights panel are gone.
   await expect(page.getByText('Coût mensuel', { exact: true })).toHaveCount(0)
@@ -25,7 +29,7 @@ test('compact subscriptions page keeps weakest link, real quotas and OpenCode we
   await expect(page.getByText(/Reset ACU dans/)).toBeVisible()
   // 1m is the current month on the consumption page, but the quota history keeps
   // explicit monthly/weekly/daily/rolling controls.
-  await expect(page.getByText('Quota total').first()).toBeVisible()
+  await expect(page.getByText(/· Total$/).first()).toBeVisible()
   await expect(page.getByText('Quotidien', { exact: true })).toBeVisible()
   // One failing subscription does not turn fresh data into a stale page banner.
   await expect(page.getByText('Données anciennes')).toHaveCount(0)

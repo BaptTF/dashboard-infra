@@ -18,6 +18,7 @@ export interface FreshnessState {
   stale: boolean
   failed?: boolean
   partial?: boolean
+  loading?: boolean
   source: string | null
 }
 
@@ -32,6 +33,7 @@ const EMPTY: FreshnessState = {
   stale: false,
   failed: false,
   partial: false,
+  loading: false,
   source: null,
 }
 
@@ -52,6 +54,7 @@ export function usePublishFreshness(input: {
   stale: boolean | undefined
   failed?: boolean
   partial?: boolean
+  loading?: boolean
   source: string
 }) {
   const context = useContext(FreshnessContext)
@@ -63,6 +66,7 @@ export function usePublishFreshness(input: {
       stale: input.stale ?? false,
       failed: input.failed ?? false,
       partial: input.partial ?? false,
+      loading: input.loading ?? false,
       source: input.source,
     })
     return () => publish?.(null)
@@ -73,6 +77,7 @@ export function usePublishFreshness(input: {
     input.stale,
     input.failed,
     input.partial,
+    input.loading,
     input.source,
   ])
 }
@@ -104,6 +109,7 @@ export function FreshnessBadge({
   const now = useNow()
   const hasResponse = value.fetchedAt != null
   const hasCollection = value.lastSuccessAt != null
+  const loading = !hasResponse && value.loading === true
   const failed = hasResponse && value.failed === true
   const partial = hasResponse && !failed && value.partial === true
   const neutral = !hasResponse || (!hasCollection && !failed && !partial && !value.stale)
@@ -119,29 +125,36 @@ export function FreshnessBadge({
   const clockAhead = since === 'horloge source en avance'
   const unknownSince = 'aucun succès connu'
   const compactAge =
-    since && since !== 'horloge source en avance' ? since.replace(/^il y a /, '') : null
-  const compactLabel = neutral
-    ? '—'
-    : failed
-      ? `Échec${compactAge ? ` · ${compactAge}` : ''}`
-      : partial
-        ? `Partiel${compactAge ? ` · ${compactAge}` : ''}`
-        : value.stale
-          ? `Retard${compactAge ? ` · ${compactAge}` : ''}`
-          : // Keep the mobile header on one short line; the age stays in the
-            // accessible label and the title.
-            'À jour'
-  const label = neutral
-    ? 'Aucune collecte reçue'
-    : failed
-      ? `Collecte en échec · ${since ?? unknownSince}`
-      : partial
-        ? `Collecte partielle · ${since ?? unknownSince}`
-        : value.stale
-          ? `Collecte en retard · ${since ?? unknownSince}`
-          : clockAhead
-            ? 'Horloge source en avance'
-            : `Collecte ${since}`
+    since &&
+    since !== 'à l’instant' &&
+    since !== "à l'instant" &&
+    since !== 'horloge source en avance'
+      ? since.replace(/^il y a /, '').replace('une minute', '1 min')
+      : null
+  const compactLabel = loading
+    ? 'Chargement…'
+    : neutral
+      ? '—'
+      : failed
+        ? `Échec${compactAge ? ` · ${compactAge}` : ''}`
+        : partial
+          ? `Partiel${compactAge ? ` · ${compactAge}` : ''}`
+          : value.stale
+            ? `Retard${compactAge ? ` · ${compactAge}` : ''}`
+            : `À jour${compactAge ? ` · ${compactAge}` : ''}`
+  const label = loading
+    ? 'Chargement…'
+    : neutral
+      ? 'Aucune collecte reçue'
+      : failed
+        ? `Collecte en échec · ${since ?? unknownSince}`
+        : partial
+          ? `Collecte partielle · ${since ?? unknownSince}`
+          : value.stale
+            ? `Collecte en retard · ${since ?? unknownSince}`
+            : clockAhead
+              ? 'Horloge source en avance'
+              : `Collecte ${since}`
 
   return (
     <span
@@ -154,11 +167,13 @@ export function FreshnessBadge({
         className,
       )}
       title={
-        hasCollection
-          ? `Dernière collecte réussie : ${formatParisDateTime(value.lastSuccessAt)} · Réponse reçue : ${formatParisDateTime(value.fetchedAt)}`
-          : hasResponse
-            ? `Aucune collecte horodatée · Réponse reçue : ${formatParisDateTime(value.fetchedAt)}`
-            : 'Aucune collecte reçue pour le moment'
+        loading
+          ? 'Chargement des données en cours'
+          : hasCollection
+            ? `Dernière collecte réussie : ${formatParisDateTime(value.lastSuccessAt)} · Réponse reçue : ${formatParisDateTime(value.fetchedAt)}`
+            : hasResponse
+              ? `Aucune collecte horodatée · Réponse reçue : ${formatParisDateTime(value.fetchedAt)}`
+              : 'Aucune collecte reçue pour le moment'
       }
       aria-live="polite"
     >

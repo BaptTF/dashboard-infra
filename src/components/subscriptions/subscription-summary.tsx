@@ -2,7 +2,7 @@ import { ShieldAlert, TimerReset } from 'lucide-react'
 import { MetricCard } from '~/components/metric-card'
 import { Badge } from '~/components/ui/badge'
 import { formatParisDateTime, quotaWindowLabel } from '~/lib/dates'
-import { formatDecimal, formatPercent } from '~/lib/format'
+import { formatDecimal, formatPercent, quotaLabel } from '~/lib/format'
 import {
   maxDryDaysQuota,
   pickWeakestQuota,
@@ -58,8 +58,10 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
         hint={
           weakest ? (
             <>
-              {quotaWindowLabel(weakest.quota.window)} · {formatPercent(weakest.quota.usedRatio)}{' '}
-              consommé
+              {weakestMeta?.name ?? weakest.quota.provider} ·{' '}
+              {subscriptionDisplayName(weakest.quota.provider, weakest.quota.subscription)} —{' '}
+              {quotaLabel(weakest.quota.quota)} · {quotaWindowLabel(weakest.quota.window)} ·{' '}
+              {formatPercent(weakest.quota.usedRatio)} consommé
               {weakest.quota.dryDays != null && weakest.quota.dryDays > 0
                 ? ` · ${formatDecimal(weakest.quota.dryDays)} j sans quota`
                 : ''}
@@ -79,7 +81,9 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
           dryDaysQuota ? (
             <>
               <span className="block">
-                Projection maximale observée · {quotaWindowLabel(dryDaysQuota.window)}
+                Projection maximale · {providerMeta(dryDaysQuota.provider).name} ·{' '}
+                {subscriptionDisplayName(dryDaysQuota.provider, dryDaysQuota.subscription)} ·{' '}
+                {quotaWindowLabel(dryDaysQuota.window)}
               </span>
               {dryDaysQuota.resetAt != null ? (
                 <span className="block">

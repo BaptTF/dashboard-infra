@@ -26,6 +26,7 @@ describe('French formatting', () => {
   })
 
   it('translates quota kinds used in legends and tables', () => {
+    expect(quotaLabel('total')).toBe('Total')
     expect(quotaLabel('on_demand')).toBe('Hors forfait')
     expect(quotaLabel('included')).toBe('Inclus')
     expect(quotaLabel('api')).toBe('API')

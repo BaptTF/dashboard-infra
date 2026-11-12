@@ -67,6 +67,7 @@ function SubscriptionsPage() {
     stale: anyStale,
     failed: level === 'failure',
     partial: level === 'partial',
+    loading: overviewQuery.isPending && overview === undefined,
     source: 'abonnements',
   })
 
