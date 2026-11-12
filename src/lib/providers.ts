@@ -35,7 +35,7 @@ const PROVIDER_META: Record<ProviderSlug, ProviderMeta> = {
   devin: {
     slug: 'devin',
     name: 'Devin',
-    description: 'Quotas quotidiens et hebdomadaires, consommation ACU',
+    description: 'Quotas disponibles selon l’API (hebdomadaire actuellement), consommation ACU',
     accent: 'var(--chart-3)',
   },
   other: {
@@ -283,16 +283,35 @@ export function pickWeakestQuota(quotas: SubscriptionQuota[]): WeakestQuota | nu
       quota,
       severity: quota.severity,
       rank: quotaSeverityRank(quota.severity),
+      // A quota already consumed at 100 % is the weakest link now, before any
+      // forward-looking dry-day projection.
+      full: quota.usedRatio != null && quota.usedRatio >= 1,
       dryDays: quota.dryDays ?? Number.NEGATIVE_INFINITY,
       used: quota.usedRatio ?? 0,
       elapsed: quota.elapsedRatio ?? 0,
     }))
     .sort(
       (a, b) =>
-        b.rank - a.rank || b.dryDays - a.dryDays || b.used - a.used || b.elapsed - a.elapsed,
+        Number(b.full) - Number(a.full) ||
+        b.rank - a.rank ||
+        b.dryDays - a.dryDays ||
+        b.used - a.used ||
+        b.elapsed - a.elapsed,
     )
   const weakest = scored[0]
   return weakest ? { quota: weakest.quota, severity: weakest.severity } : null
+}
+
+/** Maximum real dry-day projection, with its own quota and reset. */
+export function maxDryDaysQuota(quotas: SubscriptionQuota[]): SubscriptionQuota | null {
+  let best: SubscriptionQuota | null = null
+  for (const quota of quotas) {
+    if (quota.dryDays == null || !Number.isFinite(quota.dryDays)) continue
+    if (best == null || quota.dryDays > (best.dryDays ?? Number.NEGATIVE_INFINITY)) {
+      best = quota
+    }
+  }
+  return best
 }
 
 export function severityCount(quotas: SubscriptionQuota[], severity: Severity): number {

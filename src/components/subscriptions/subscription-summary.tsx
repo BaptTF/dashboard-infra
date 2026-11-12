@@ -4,6 +4,7 @@ import { Badge } from '~/components/ui/badge'
 import { formatParisDateTime, quotaWindowLabel } from '~/lib/dates'
 import { formatDecimal, formatPercent } from '~/lib/format'
 import {
+  maxDryDaysQuota,
   pickWeakestQuota,
   providerMeta,
   severityCount,
@@ -28,6 +29,7 @@ function severityTone(severity: Severity | null) {
 
 export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverview }) {
   const weakest = pickWeakestQuota(overview.quotas)
+  const dryDaysQuota = maxDryDaysQuota(overview.quotas)
   const atRisk = severityCount(overview.quotas, 1) + severityCount(overview.quotas, 2)
   const weakestMeta = weakest ? providerMeta(weakest.quota.provider) : null
 
@@ -72,25 +74,31 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
       />
       <MetricCard
         label="Jours à sec"
-        value={weakest?.quota.dryDays != null ? formatDecimal(weakest.quota.dryDays) : '—'}
+        value={dryDaysQuota?.dryDays != null ? formatDecimal(dryDaysQuota.dryDays) : '—'}
         hint={
-          <>
-            <span className="block">Jours projetés sans quota avant reset</span>
-            {weakest?.quota.resetAt != null ? (
+          dryDaysQuota ? (
+            <>
               <span className="block">
-                Reset {formatParisDateTime(weakest.quota.resetAt * 1000)}
+                Projection maximale observée · {quotaWindowLabel(dryDaysQuota.window)}
               </span>
-            ) : null}
-          </>
+              {dryDaysQuota.resetAt != null ? (
+                <span className="block">
+                  Reset {formatParisDateTime(dryDaysQuota.resetAt * 1000)}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <span className="block">Aucune projection de jours à sec disponible</span>
+          )
         }
         icon={TimerReset}
-        tone={severityTone(weakest?.severity ?? null)}
+        tone={severityTone(dryDaysQuota?.severity ?? null)}
         className="h-full p-3.5"
       />
       <MetricCard
         label="Quotas sous tension"
         value={`${atRisk} / ${overview.quotas.length}`}
-        hint="Sévérité exportée. Un badge Dérapage peut aussi venir de la projection des jours à sec avant le reset."
+        hint="Sévérité exportée. Un quota plein prime, puis la sévérité et la projection de jours à sec."
         icon={ShieldAlert}
         tone={atRisk > 0 ? 'warning' : 'success'}
         className="h-full p-3.5"

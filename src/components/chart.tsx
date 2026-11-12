@@ -129,9 +129,15 @@ export function Chart({
   const [reducedMotion, setReducedMotion] = useState(false)
   const [narrow, setNarrow] = useState(false)
   const [tableOpen, setTableOpen] = useState(false)
+  const [tableOverflowing, setTableOverflowing] = useState(false)
+  const tableScroll = useRef<HTMLDivElement>(null)
   const descriptionId = useId()
   const hasData = series.some((entry) => seriesHasValue(entry.points))
   const stepMs = stepSeconds != null ? stepSeconds * 1000 : undefined
+  // Small legends stay readable on mobile as a wrapped DOM-free ECharts legend;
+  // only large histories fall back to the accessible table.
+  const legendVisible = series.length > 1 && (!narrow || series.length <= 4)
+  const legendMode = !legendVisible ? 'hidden' : narrow ? 'plain' : 'scroll'
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -147,6 +153,24 @@ export function Chart({
       mobile.removeEventListener('change', updateWidth)
     }
   }, [])
+
+  useEffect(() => {
+    const scroll = tableScroll.current
+    if (!scroll) return
+    const update = () => setTableOverflowing(scroll.scrollWidth > scroll.clientWidth + 1)
+    queueMicrotask(update)
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => update()) : null
+    observer?.observe(scroll)
+    if (scroll.firstElementChild) observer?.observe(scroll.firstElementChild)
+    const mutation =
+      typeof MutationObserver !== 'undefined' ? new MutationObserver(() => update()) : null
+    mutation?.observe(scroll, { childList: true, subtree: true, characterData: true })
+    return () => {
+      observer?.disconnect()
+      mutation?.disconnect()
+    }
+  }, [tableOpen, table?.columns.length, table?.rows.length])
 
   useEffect(() => {
     if (!hasData || !container.current) return
@@ -169,16 +193,16 @@ export function Chart({
       grid: {
         left: 6,
         // Keep the last timestamp label fully visible instead of clipping it.
-        right: 32,
-        top: series.length > 1 && !narrow ? 50 : 22,
+        right: xLabelMode === 'time' ? 44 : 32,
+        top: legendVisible ? (narrow ? 72 : 50) : 22,
         bottom: 54,
         containLabel: true,
       },
       legend: {
-        // Canvas legend pagination is unusable on mobile; the accessible table
-        // below the chart always carries the series names instead.
-        show: series.length > 1 && !narrow,
-        type: 'scroll',
+        // Small mobile legends wrap on several lines; large histories hide the
+        // canvas legend in favour of the accessible table below.
+        show: legendVisible,
+        type: narrow ? 'plain' : 'scroll',
         top: 0,
         left: 0,
         right: 0,
@@ -362,6 +386,7 @@ export function Chart({
     dataKey,
     description,
     hasData,
+    legendVisible,
     narrow,
     reducedMotion,
     resolvedTheme,
@@ -408,6 +433,8 @@ export function Chart({
         aria-describedby={description ? descriptionId : undefined}
         data-data-key={dataKey}
         data-series-count={series.length}
+        data-legend-mode={legendMode}
+        data-x-label-mode={xLabelMode}
       />
       {table ? (
         <details
@@ -422,6 +449,7 @@ export function Chart({
             {tableOpen ? 'Masquer les données' : 'Voir les données sous forme de tableau'}
           </summary>
           <div
+            ref={tableScroll}
             className="scroll-shadow mt-2 max-h-72 overflow-auto rounded-md border"
             role="region"
             aria-label={`Données du graphique — ${ariaLabel}`}
@@ -431,11 +459,15 @@ export function Chart({
               <caption className="sr-only">{ariaLabel}</caption>
               <thead className="bg-muted/60 sticky top-0">
                 <tr>
-                  {table.columns.map((column) => (
+                  {table.columns.map((column, columnIndex) => (
                     <th
                       key={column.label}
                       scope="col"
-                      className={`text-muted-foreground border-b px-2.5 py-1.5 font-medium whitespace-nowrap ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                      className={`text-muted-foreground border-b px-2 py-1.5 font-medium whitespace-nowrap sm:px-2.5 ${column.align === 'right' ? 'text-right' : 'text-left'} ${
+                        columnIndex === table.columns.length - 1
+                          ? 'bg-muted sticky right-0 z-10 sm:static sm:bg-transparent'
+                          : ''
+                      }`}
                     >
                       {column.label}
                     </th>
@@ -448,7 +480,9 @@ export function Chart({
                     {row.map((cell, cellIndex) => (
                       <td
                         key={cellIndex}
-                        className={`px-2.5 py-1.5 tabular-nums ${table.columns[cellIndex]?.align === 'right' ? 'text-right' : ''}`}
+                        className={`bg-card px-2 py-1.5 tabular-nums sm:bg-transparent sm:px-2.5 ${table.columns[cellIndex]?.align === 'right' ? 'text-right' : ''} ${
+                          cellIndex === row.length - 1 ? 'sticky right-0 z-[1] sm:static' : ''
+                        }`}
                       >
                         {cell}
                       </td>
@@ -458,6 +492,11 @@ export function Chart({
               </tbody>
             </table>
           </div>
+          {tableOverflowing ? (
+            <p className="text-muted-foreground mt-1 text-xs">
+              Défilement horizontal… La dernière colonne reste visible.
+            </p>
+          ) : null}
         </details>
       ) : null}
     </div>

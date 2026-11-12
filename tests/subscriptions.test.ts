@@ -19,6 +19,7 @@ import {
   collectionFor,
   collectionLevel,
   groupOverview,
+  maxDryDaysQuota,
   pickWeakestQuota,
   providerLabel,
   quotaSeverityHint,
@@ -488,6 +489,7 @@ describe('normalized provider/subscription join', () => {
     ]
     expect(pickWeakestQuota(quotas)?.quota.subscription).toBe('B')
     expect(averageUsedRatio(quotas)).toBeCloseTo(0.7333, 3)
+    expect(maxDryDaysQuota(quotas)?.subscription).toBe('B')
     expect(
       totalMonthlyCost(
         overviewWith({
@@ -495,6 +497,47 @@ describe('normalized provider/subscription join', () => {
         }),
       ),
     ).toBe(20)
+  })
+
+  it('prioritises a full quota over a large dry-day projection', () => {
+    const quotas = [
+      {
+        provider: 'opencode',
+        subscription: 'A',
+        window: 'monthly' as const,
+        quota: 'q',
+        usedRatio: 0.43,
+        resetAt: 1_800_000_000,
+        elapsedRatio: 0.4,
+        dryDays: 9.9,
+        severity: 2 as const,
+      },
+      {
+        provider: 'cursor',
+        subscription: 'b_personal',
+        window: 'monthly' as const,
+        quota: 'q',
+        usedRatio: 1,
+        resetAt: 1_700_000_000,
+        elapsedRatio: 0.8,
+        dryDays: 0,
+        severity: 0 as const,
+      },
+    ]
+    expect(pickWeakestQuota(quotas)?.quota.subscription).toBe('b_personal')
+    // The dry-day card never reuses the weakest quota: it takes the real max.
+    expect(maxDryDaysQuota(quotas)).toMatchObject({
+      subscription: 'A',
+      dryDays: 9.9,
+      resetAt: 1_800_000_000,
+    })
+    expect(maxDryDaysQuota([])).toBeNull()
+    expect(
+      maxDryDaysQuota([
+        { ...quotas[0]!, dryDays: null },
+        { ...quotas[1]!, dryDays: null },
+      ]),
+    ).toBeNull()
   })
 
   it('never turns an unknown severity into green', () => {

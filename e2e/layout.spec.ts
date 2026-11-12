@@ -114,17 +114,70 @@ test('mobile tables keep tokens, cache and sessions reachable without horizontal
   await expect(hermesRow.getByText('Sessions', { exact: true })).toBeVisible()
 })
 
+test('cost chart uses time ticks for daily buckets on desktop and mobile', async ({
+  page,
+}, testInfo) => {
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  const chart = page.locator('[data-data-key="bifrost-1m-day"]')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(chart).toHaveAttribute('data-x-label-mode', 'time')
+  // Three cost keys fit as a wrapped legend on mobile; larger grids only use
+  // the table fallback.
+  await expect(chart).toHaveAttribute(
+    'data-legend-mode',
+    testInfo.project.name.includes('mobile') ? 'plain' : 'scroll',
+  )
+})
+
+test('mobile header shows a short freshness label and aligned KPI titles', async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'mobile header scenario')
+  // The consumption page has a healthy collection, unlike the nominal fixture
+  // where one OpenCode subscription deliberately fails.
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  await expect(page.locator('header').getByText('À jour', { exact: true })).toBeVisible()
+  await gotoHydrated(page, '/?window=monthly&history=30d')
+  const title = page.getByText('Maillon faible', { exact: true })
+  const minHeight = await title.evaluate((element) => getComputedStyle(element).minHeight)
+  expect(minHeight).not.toBe('0px')
+})
+
 test('mobile history uses compact dates instead of four-line timestamps', async ({
   page,
 }, testInfo) => {
   test.skip(!testInfo.project.name.includes('mobile'), 'mobile history scenario')
+  await page.setViewportSize({ width: 390, height: 844 })
   await gotoHydrated(page, '/?window=monthly&history=30d')
+  // The large quota history hides the canvas legend; the table is the fallback.
+  const chart = page.locator('[data-data-key="quotas-monthly-30d"]')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(chart).toHaveAttribute('data-legend-mode', 'hidden')
   await page.getByText('Voir les données sous forme de tableau').first().click()
   const table = page.getByRole('region', { name: /Données du graphique/ }).first()
   await expect(table).toBeVisible()
   const compact = table.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/).first()
   await expect(compact).toBeVisible()
   await expect(compact).toHaveAttribute('title', /\d{4}/)
+  await expect(table.getByRole('columnheader', { name: 'Consommé' })).toBeVisible()
+  await expect(table.getByText(/OpenCode · /).first()).toBeVisible()
+
+  const firstRow = table.getByRole('row').nth(1)
+  const value = firstRow.locator('td').last()
+  await expect(value).toBeVisible()
+  const [regionBox, valueBox] = await Promise.all([table.boundingBox(), value.boundingBox()])
+  expect(regionBox).not.toBeNull()
+  expect(valueBox).not.toBeNull()
+  if (regionBox && valueBox) {
+    // The right-aligned value stays inside the viewport even if the table scrolls.
+    expect(valueBox.x + valueBox.width).toBeLessThanOrEqual(regionBox.x + regionBox.width + 1)
+  }
+  const overflow = await table.evaluate((element) => element.scrollWidth > element.clientWidth + 1)
+  if (overflow) {
+    await expect(
+      page.getByText(/Défilement horizontal… La dernière colonne reste visible/),
+    ).toBeVisible()
+  }
 })
 
 test('history panel header and filters wrap on a narrow viewport', async ({ page }, testInfo) => {

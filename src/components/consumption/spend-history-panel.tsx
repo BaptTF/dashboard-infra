@@ -118,7 +118,7 @@ export function SpendHistoryPanel({
             height={330}
             stacked
             area
-            xLabelMode={data.bucket === 'week' ? 'month' : 'day'}
+            xLabelMode={data.bucket === 'week' ? 'month' : 'time'}
             table={table}
             stepSeconds={data.stepSeconds}
             dataKey={`bifrost-${data.window}-${data.bucket}`}

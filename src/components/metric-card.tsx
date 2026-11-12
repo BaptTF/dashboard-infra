@@ -36,7 +36,7 @@ export function MetricCard({
   return (
     <Card className={cn('min-w-0 p-4', className)}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+        <p className="text-muted-foreground min-h-8 text-[11px] leading-snug font-medium tracking-wide uppercase sm:min-h-0">
           {label}
         </p>
         {Icon ? (

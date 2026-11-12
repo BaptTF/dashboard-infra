@@ -75,8 +75,7 @@ export function QuotaHistoryPanel({
       >
         {formatParisDateTimeCompact(point.timestamp * 1000)}
       </span>,
-      providerLabel(entry.provider),
-      subscriptionDisplayName(entry.provider, entry.subscription),
+      `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)}`,
       quotaLabel(entry.quota),
       formatPercent(point.value),
     ]),
@@ -84,7 +83,6 @@ export function QuotaHistoryPanel({
   const table: ChartTable = {
     columns: [
       { label: 'Date' },
-      { label: 'Fournisseur' },
       { label: 'Abonnement' },
       { label: 'Quota' },
       { label: 'Consommé', align: 'right' },

@@ -107,11 +107,11 @@ function quotaWindowLine(subscriptions: ProviderSubscription[]): string | null {
 }
 
 function subscriptionGridClass(count: number): string {
-  if (count <= 1) return 'grid gap-3'
-  if (count === 2 || count === 4) return 'grid gap-3 sm:grid-cols-2'
-  if (count % 3 === 0) return 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+  if (count <= 1) return 'grid items-start gap-3'
+  if (count === 2 || count === 4) return 'grid items-start gap-3 sm:grid-cols-2'
+  if (count % 3 === 0) return 'grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3'
   // Five OpenCode subscriptions become 3 + 2 instead of one orphan card.
-  return 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+  return 'grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3'
 }
 
 function spendSeverity(ratio: number | null): Severity | null {

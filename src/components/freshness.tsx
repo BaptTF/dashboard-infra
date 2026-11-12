@@ -128,7 +128,9 @@ export function FreshnessBadge({
         ? `Partiel${compactAge ? ` · ${compactAge}` : ''}`
         : value.stale
           ? `Retard${compactAge ? ` · ${compactAge}` : ''}`
-          : `À jour${compactAge ? ` · ${compactAge}` : ''}`
+          : // Keep the mobile header on one short line; the age stays in the
+            // accessible label and the title.
+            'À jour'
   const label = neutral
     ? 'Aucune collecte reçue'
     : failed
