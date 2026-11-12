@@ -1,0 +1,12 @@
+node_modules
+.output
+coverage
+playwright-report
+test-results
+package-lock.json
+src/routeTree.gen.ts
+flake.lock
+public
+.tanstack/
+
+LICENSE
