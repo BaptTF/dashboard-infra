@@ -1,6 +1,7 @@
 export type QuotaWindow = 'monthly' | 'weekly' | 'rolling' | 'daily'
 export type HistoryRange = '7d' | '30d' | '90d'
-export type SpendWindow = '1m' | '3m' | '6m' | '1y'
+export type SpendWindow = '1m' | '3m' | '6m' | '1y' | 'all'
+export type SpendGranularity = 'hour' | '6h' | '12h' | 'day'
 export type Severity = 0 | 1 | 2
 
 export interface MetricSample {
@@ -193,11 +194,10 @@ export interface SpendHistory {
   from: string
   to: string
   stepSeconds: number
-  bucket: 'day' | 'week'
+  granularity: SpendGranularity
   window: SpendWindow
   series: SpendPersonDailySeries[]
   firstSampleAt: string | null
-  excludedKeys: string[]
   error?: string
 }
 

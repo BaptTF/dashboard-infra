@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   assembleLeo,
-  bifrostFromHermes,
-  buildSpendHistoryQuery,
+  buildSpendCostQuery,
   buildSpendQueries,
   HISTORY_REFERENCE_DAYS,
   makeReport,
+  reconstructBifrostCost,
   spendHistoryPlan,
   spendHistoryPointTimestamp,
-  spendHistorySeries,
+  sumLeo,
+  sumPeople,
 } from '~/lib/spend'
 import type { MetricSample, MetricSeries } from '~/lib/types'
+import type { SpendHistoryPlan } from '~/lib/spend'
 import { sample } from './helpers'
 
 const labels = {
@@ -29,6 +31,8 @@ function goFixture() {
       provider: 'opencode-go',
       model: 'deepseek-v4.1-flash',
     }),
+    sample(12.5, labels.leaKey),
+    sample(136, labels.leoKey),
   ]
   const input: MetricSample[] = [
     sample(500_000, {
@@ -36,16 +40,11 @@ function goFixture() {
       provider: 'opencode-go',
       model: 'deepseek-v4.1-flash',
     }),
+    sample(1000, labels.leaKey),
+    sample(10_000, labels.leoKey),
   ]
-  const output: MetricSample[] = []
-  const cache: MetricSample[] = []
-  const windowCost = [sample(12.5, labels.leaKey), sample(136, labels.leoKey)]
-  const windowTokens = [
-    sample(1000, { ...labels.leaKey, type: 'input' }),
-    sample(10_000, { ...labels.leoKey, type: 'input' }),
-    sample(9000, { ...labels.leoKey, type: 'cache_read' }),
-    sample(50, { ...labels.leoKey, type: 'output' }),
-  ]
+  const output: MetricSample[] = [sample(50, labels.leoKey), sample(0, labels.leaKey)]
+  const cache: MetricSample[] = [sample(9000, labels.leoKey)]
   const leoCost = [
     sample(135, {
       source: 'telegram',
@@ -137,8 +136,6 @@ function goFixture() {
     input,
     output,
     cache,
-    windowCost,
-    windowTokens,
     leoCost,
     leoTokens,
     leoSessions,
@@ -157,7 +154,12 @@ describe('spend report ported from internal/spend/client.go', () => {
     expect(report.window).toBe('1m')
 
     const lea = report.people.find((person) => person.virtualKey === 'hermes-lea')
-    expect(lea).toMatchObject({ cost: 12.5, tokensIn: 1000, cacheRead: 0, origin: 'hermes' })
+    expect(lea).toMatchObject({
+      cost: 12.5,
+      tokensIn: 1000,
+      cacheRead: 0,
+      origin: 'bifrost',
+    })
     expect(lea?.providers[0]).toMatchObject({ provider: 'bedrock' })
     expect(lea?.providers[0]?.models[0]?.model).toBe('us.anthropic.claude-sonnet-4-20250514-v1:0')
 
@@ -167,7 +169,7 @@ describe('spend report ported from internal/spend/client.go', () => {
       tokensIn: 10_000,
       tokensOut: 50,
       cacheRead: 9000,
-      origin: 'hermes',
+      origin: 'bifrost',
     })
 
     const emma = report.people.find((person) => person.virtualKey === 'tailscale-emma')
@@ -211,20 +213,21 @@ describe('spend report ported from internal/spend/client.go', () => {
     expect(report.leaOther).toMatchObject({ sessions: 2 })
   })
 
-  it('reconstructs missing Hermes rows without double counting', () => {
+  it('keeps Hermes keys once in the Bifrost table and never adds the Hermes views', () => {
     const fixture = goFixture()
-    fixture.windowCost = []
-    fixture.windowTokens = []
     const report = makeReport(new Date('2026-11-11T12:00:00Z'), '1m', fixture)
     const leo = report.people.find((person) => person.virtualKey === 'hermes-leo')
     const lea = report.people.find((person) => person.virtualKey === 'hermes-lea')
-    expect(leo?.origin).toBe('hermes')
-    expect(lea?.origin).toBe('hermes')
-    // One row per agent, not one Bifrost row plus one Hermes row.
+    expect(leo?.origin).toBe('bifrost')
+    expect(lea?.origin).toBe('bifrost')
     expect(report.people.filter((person) => person.virtualKey === 'hermes-leo')).toHaveLength(1)
     expect(report.people.filter((person) => person.virtualKey === 'hermes-lea')).toHaveLength(1)
-    expect(lea?.cost).toBeCloseTo(12.5)
-    expect(leo?.tokensIn).toBe(10_050)
+    // The Bifrost totals are the raw counter truth, not the Hermes view added again.
+    expect(sumPeople(report.people, 'bifrost').cost).toBeCloseTo(2 + 12.5 + 136)
+    expect(sumLeo(report.leo, report.leoOther).costUsd).toBe(188)
+    expect(sumLeo(report.lea, report.leaOther).costUsd).toBe(12.5)
+    expect(leo?.cost).toBe(136)
+    expect(lea?.cost).toBe(12.5)
   })
 
   it('ignores unlabelled legacy samples when a split exists', () => {
@@ -240,8 +243,8 @@ describe('spend report ported from internal/spend/client.go', () => {
     expect(users[0]?.costUsd).toBe(10)
   })
 
-  it('keeps cache out of Hermes input and adds it back for Bifrost shape', () => {
-    const [users, other] = assembleLeo(
+  it('keeps cache out of Hermes input', () => {
+    const [users] = assembleLeo(
       [],
       [
         sample(1000, { source: 'telegram', user: 'A', provider: 'p', model: 'm', type: 'input' }),
@@ -256,46 +259,87 @@ describe('spend report ported from internal/spend/client.go', () => {
       [],
       (source) => source === 'telegram',
     )
-    const derived = bifrostFromHermes('hermes-leo', users, other)
     expect(users[0]?.tokensIn).toBe(1000)
     expect(users[0]?.cacheRead).toBe(900)
-    expect(derived.tokensIn).toBe(1900)
-    expect(derived.cacheRead).toBe(900)
   })
 
   it('normalizes unknown window values to one month', () => {
-    expect(buildSpendQueries('1m', '2678400s')).toHaveLength(12)
+    expect(buildSpendQueries('1m', '2678400s')).toHaveLength(9)
   })
 })
 
 describe('spend PromQL', () => {
-  it('uses increase() for Bifrost and current window gauges for Hermes', () => {
+  it('removes Hermes exclusions from tokens and cache queries', () => {
     const queries = buildSpendQueries('3m', '7776000s')
     expect(queries[0]).toBe(
-      'sum by (virtual_key_name, provider, model) (max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)(increase(bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}[7776000s])))',
+      'sum by (virtual_key_name, provider, model) (max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)(increase(bifrost_input_tokens_total[7776000s])))',
     )
-    expect(queries[4]).toContain('bifrost_window_cost_usd{window="3m"}')
-    expect(queries[6]).toBe(
+    expect(queries[1]).toContain('bifrost_output_tokens_total[7776000s]')
+    expect(queries[2]).toContain('bifrost_cache_read_input_tokens_total[7776000s]')
+    expect(queries.join(' ')).not.toContain('virtual_key_name!~')
+    expect(queries[3]).toBe(
       'max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)(hermes_window_cost_usd{agent="leo",window="3m"})',
     )
-    expect(queries[11]).toContain('hermes_window_sessions{agent="lea",window="3m"}')
+    expect(queries[8]).toContain('hermes_window_sessions{agent="lea",window="3m"}')
     expect(queries.every((query) => !query.includes('sum(') || query.includes('sum by'))).toBe(true)
   })
 
-  it('keeps model/backfill identity and reads daily cumulative points', () => {
-    const query = buildSpendHistoryQuery('day')
+  it('reads the raw cumulative cost counter without increase or exclusions', () => {
+    const query = buildSpendCostQuery()
     expect(query).not.toContain('increase')
+    expect(query).not.toContain('virtual_key_name!~')
     expect(query).toContain('sum by (virtual_key_name, provider, model, backfill)')
-    expect(query).toContain('bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}')
-    expect(query).toContain('last_over_time')
-    expect(query).toContain('[1d]')
+    expect(query).toContain('last_over_time(bifrost_cost_total[2d])')
     expect(query).toContain('max without')
-    // Every display period uses the same daily reference query.
-    expect(buildSpendHistoryQuery('week')).toBe(query)
   })
 })
 
-describe('spend history reconstruction', () => {
+describe('spend history plan', () => {
+  const now = new Date('2026-11-12T20:00:00Z')
+
+  it('adapts the bucket and aligns the query on UTC midnight', () => {
+    const month = spendHistoryPlan('1m', now)
+    expect(month.granularity).toBe('hour')
+    expect(month.stepSeconds).toBe(3600)
+    expect(month.queryStepSeconds).toBe(3600)
+    expect(month.from.toISOString()).toBe('2026-10-31T23:00:00.000Z')
+    expect(month.queryFrom.toISOString()).toBe('2026-10-31T00:00:00.000Z')
+    expect(month.reconstructFrom).toBe(Date.UTC(2026, 9, 31, 23) / 1000)
+    expect(month.baselineFrom.getTime()).toBeLessThanOrEqual(
+      now.getTime() - HISTORY_REFERENCE_DAYS * 86_400_000,
+    )
+
+    expect(spendHistoryPlan('3m', now)).toMatchObject({
+      granularity: '6h',
+      stepSeconds: 6 * 3600,
+    })
+    expect(spendHistoryPlan('6m', now)).toMatchObject({
+      granularity: '12h',
+      stepSeconds: 12 * 3600,
+    })
+    expect(spendHistoryPlan('1y', now)).toMatchObject({
+      granularity: 'day',
+      stepSeconds: 86_400,
+    })
+  })
+
+  it('looks back at most two years for "Depuis le début"', () => {
+    const all = spendHistoryPlan('all', now)
+    expect(all.granularity).toBe('day')
+    expect(all.stepSeconds).toBe(86_400)
+    const ageDays = (now.getTime() - all.from.getTime()) / 86_400_000
+    expect(ageDays).toBeGreaterThan(729)
+    expect(ageDays).toBeLessThan(732)
+    expect(all.queryFrom.getTime()).toBeLessThan(all.from.getTime())
+  })
+
+  it('labels a backfill evaluation with the consumed UTC day', () => {
+    const evaluation = Date.UTC(2026, 10, 1, 0, 0) / 1000
+    expect(spendHistoryPointTimestamp(evaluation) * 1000).toBe(Date.UTC(2026, 9, 31, 23, 57))
+  })
+})
+
+describe('Bifrost cost reconstruction', () => {
   const now = new Date('2026-11-12T20:00:00Z')
   const plan = spendHistoryPlan('1m', now)
 
@@ -310,160 +354,221 @@ describe('spend history reconstruction', () => {
     }
   }
 
-  it('queries a 400-day daily reference window aligned on 00:02 UTC', () => {
-    const expected =
-      Math.floor((now.getTime() / 1000 - HISTORY_REFERENCE_DAYS * 86_400) / 86_400) * 86_400 + 120
-    expect(plan.queryFrom.getTime() / 1000).toBe(expected)
-    expect(plan.queryFrom.getUTCHours()).toBe(0)
-    expect(plan.queryFrom.getUTCMinutes()).toBe(2)
-    expect(plan.queryStepSeconds).toBe(86_400)
-    expect(plan.stepSeconds).toBe(86_400)
-    expect(plan.from.toISOString()).toBe('2026-10-31T23:00:00.000Z')
+  function curveTotals(series: { virtualKey: string; points: { value: number }[] }[]) {
+    const totals = new Map<string, number>()
+    for (const entry of series) {
+      totals.set(
+        entry.virtualKey,
+        entry.points.reduce((sum, point) => sum + point.value, 0),
+      )
+    }
+    return totals
+  }
 
-    const week = spendHistoryPlan('1y', now)
-    expect(week.bucket).toBe('week')
-    expect(week.queryStepSeconds).toBe(86_400)
-    expect(week.stepSeconds).toBe(7 * 86_400)
-    expect(week.queryFrom.getTime()).toBe(plan.queryFrom.getTime())
-  })
+  function modelTotals(samples: MetricSample[]) {
+    const totals = new Map<string, number>()
+    for (const entry of samples) {
+      const key = (entry.labels.virtual_key_name ?? '').trim()
+      totals.set(key, (totals.get(key) ?? 0) + entry.value)
+    }
+    return totals
+  }
 
-  it('labels an evaluation with the consumed day at 23:59 UTC', () => {
-    const evaluation = Date.UTC(2026, 10, 1, 0, 2) / 1000
-    expect(spendHistoryPointTimestamp(evaluation) * 1000).toBe(Date.UTC(2026, 9, 31, 23, 59))
-  })
-
-  it('does not spike when a new model series appears with a high cumulative value', () => {
-    const rows: MetricSeries[] = [
-      row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'old', backfill: '' }, [
-        ['2026-11-01T00:02:00Z', 1],
-        ['2026-11-02T00:02:00Z', 3],
-      ]),
-      row(
-        {
-          virtual_key_name: 'tailscale-baptiste',
-          provider: 'p',
-          model: 'new',
-          backfill: 'opencode',
-        },
-        [
-          ['2026-11-02T00:02:00Z', 100],
-          ['2026-11-03T00:02:00Z', 105],
-        ],
-      ),
-    ]
-    const series = spendHistorySeries(rows, plan)
-    expect(series).toHaveLength(1)
-    expect(series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 2 },
-      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 5 },
-    ])
-  })
-
-  it('omits a series with a single sample instead of charging its cumulative value', () => {
-    const series = spendHistorySeries(
+  it('charges the first backfill sample from zero, then its daily deltas', () => {
+    const result = reconstructBifrostCost(
       [
         row({ virtual_key_name: 'vulcain', provider: 'p', model: 'm', backfill: 'opencode' }, [
-          ['2026-11-10T00:02:00Z', 500],
+          ['2026-11-01T00:00:00Z', 5],
+          ['2026-11-02T00:00:00Z', 8],
         ]),
       ],
       plan,
     )
-    expect(series).toEqual([])
-  })
-
-  it('computes multi-day deltas and treats a decrease as a reset', () => {
-    const series = spendHistorySeries(
-      [
-        row({ virtual_key_name: 'tailscale-emma', provider: 'p', model: 'm', backfill: '' }, [
-          ['2026-11-01T00:02:00Z', 0],
-          ['2026-11-02T00:02:00Z', 10],
-          ['2026-11-03T00:02:00Z', 15],
-          ['2026-11-04T00:02:00Z', 4],
-          ['2026-11-05T00:02:00Z', 9],
-        ]),
-      ],
-      plan,
-    )
-    expect(series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 10 },
-      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 5 },
-      { timestamp: Date.UTC(2026, 10, 3, 23, 59) / 1000, value: 4 },
-      { timestamp: Date.UTC(2026, 10, 4, 23, 59) / 1000, value: 5 },
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 9, 31, 23) / 1000, value: 5 },
+      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 3 },
     ])
   })
 
-  it('combines backfill and live series without charging the live first sample', () => {
-    const series = spendHistorySeries(
+  it('treats a live first sample as cost since reset and keeps fine buckets', () => {
+    const result = reconstructBifrostCost(
+      [
+        row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'm' }, [
+          ['2026-11-01T10:00:00Z', 2],
+          ['2026-11-01T11:00:00Z', 3],
+          ['2026-11-01T12:00:00Z', 9],
+        ]),
+      ],
+      plan,
+    )
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 10) / 1000, value: 2 },
+      { timestamp: Date.UTC(2026, 10, 1, 11) / 1000, value: 1 },
+      { timestamp: Date.UTC(2026, 10, 1, 12) / 1000, value: 6 },
+    ])
+  })
+
+  it('uses a pre-period baseline instead of charging its cumulative value', () => {
+    const result = reconstructBifrostCost(
       [
         row(
-          { virtual_key_name: 'tailscale-noe', provider: 'p', model: 'm', backfill: 'opencode' },
+          { virtual_key_name: 'tailscale-emma', provider: 'p', model: 'm', backfill: 'opencode' },
           [
-            ['2026-11-01T00:02:00Z', 0],
-            ['2026-11-02T00:02:00Z', 10],
+            ['2026-10-30T00:00:00Z', 10],
+            ['2026-11-01T00:00:00Z', 12],
+            ['2026-11-02T00:00:00Z', 15],
           ],
         ),
-        row({ virtual_key_name: 'tailscale-noe', provider: 'p', model: 'm' }, [
-          ['2026-11-03T00:02:00Z', 100],
-          ['2026-11-04T00:02:00Z', 107],
-        ]),
       ],
       plan,
     )
-    expect(series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 10 },
-      { timestamp: Date.UTC(2026, 10, 3, 23, 59) / 1000, value: 7 },
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 9, 31, 23) / 1000, value: 2 },
+      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 3 },
     ])
   })
 
-  it('drops datable deltas whose consumed day is before the displayed period', () => {
-    const series = spendHistorySeries(
+  it('treats a decrease as a reset', () => {
+    const result = reconstructBifrostCost(
       [
         row({ virtual_key_name: 'tailscale-emma', provider: 'p', model: 'm', backfill: '' }, [
-          ['2026-10-30T00:02:00Z', 0],
-          ['2026-10-31T00:02:00Z', 50],
-          ['2026-11-01T00:02:00Z', 60],
+          ['2026-11-01T00:00:00Z', 0],
+          ['2026-11-02T00:00:00Z', 10],
+          ['2026-11-03T00:00:00Z', 15],
+          ['2026-11-04T00:00:00Z', 4],
+          ['2026-11-05T00:00:00Z', 9],
         ]),
       ],
       plan,
     )
-    expect(series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 9, 31, 23, 59) / 1000, value: 10 },
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 2, 0) / 1000, value: 10 },
+      { timestamp: Date.UTC(2026, 10, 3, 0) / 1000, value: 5 },
+      { timestamp: Date.UTC(2026, 10, 4, 0) / 1000, value: 4 },
+      { timestamp: Date.UTC(2026, 10, 5, 0) / 1000, value: 5 },
     ])
   })
 
-  it('aggregates the 1y view by UTC week', () => {
-    const week = spendHistoryPlan('1y', now)
-    const series = spendHistorySeries(
+  it('does not create a spike when a new model series appears', () => {
+    const result = reconstructBifrostCost(
       [
-        row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'm', backfill: '' }, [
-          ['2026-01-05T00:02:00Z', 0],
-          ['2026-01-06T00:02:00Z', 5],
-          ['2026-01-07T00:02:00Z', 12],
-          ['2026-01-13T00:02:00Z', 20],
+        row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'old', backfill: '' }, [
+          ['2026-11-01T00:00:00Z', 1],
+          ['2026-11-02T00:00:00Z', 3],
         ]),
+        row(
+          {
+            virtual_key_name: 'tailscale-baptiste',
+            provider: 'p',
+            model: 'new',
+            backfill: 'opencode',
+          },
+          [
+            ['2026-11-02T00:00:00Z', 2.5],
+            ['2026-11-03T00:00:00Z', 2.8],
+          ],
+        ),
       ],
-      week,
+      plan,
     )
-    expect(series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 0, 6, 23, 59) / 1000, value: 12 },
-      { timestamp: Date.UTC(2026, 0, 12, 23, 59) / 1000, value: 8 },
+    expect(result.series).toHaveLength(1)
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 0) / 1000, value: 1 },
+      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 2.5 },
+      { timestamp: Date.UTC(2026, 10, 2, 0) / 1000, value: 2 },
+      { timestamp: Date.UTC(2026, 10, 2, 23) / 1000, value: 2.8 - 2.5 },
     ])
   })
 
-  it('excludes Hermes keys from the history curve', () => {
-    const series = spendHistorySeries(
+  it('charges an isolated backfill point instead of dropping it', () => {
+    const result = reconstructBifrostCost(
       [
-        row({ virtual_key_name: 'hermes-leo', provider: 'p', model: 'm', backfill: '' }, [
-          ['2026-11-01T00:02:00Z', 1],
-          ['2026-11-02T00:02:00Z', 2],
+        row(
+          {
+            virtual_key_name: 'backfill-isolated',
+            provider: 'p',
+            model: 'm',
+            backfill: 'opencode',
+          },
+          [['2026-11-10T00:00:00Z', 0.75]],
+        ),
+      ],
+      plan,
+    )
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 9, 23) / 1000, value: 0.75 },
+    ])
+  })
+
+  it('includes hermes-leo and hermes-lea like any other Bifrost key', () => {
+    const result = reconstructBifrostCost(
+      [
+        row({ virtual_key_name: 'hermes-leo', provider: 'p', model: 'm', backfill: 'hermes' }, [
+          ['2026-11-01T00:00:00Z', 1],
+          ['2026-11-02T00:00:00Z', 2],
         ]),
-        row({ virtual_key_name: 'hermes-lea', provider: 'p', model: 'm', backfill: '' }, [
-          ['2026-11-01T00:02:00Z', 1],
-          ['2026-11-02T00:02:00Z', 2],
+        row({ virtual_key_name: 'hermes-lea', provider: 'p', model: 'm', backfill: 'hermes' }, [
+          ['2026-11-01T00:00:00Z', 3],
+          ['2026-11-02T00:00:00Z', 4],
         ]),
       ],
       plan,
     )
-    expect(series).toEqual([])
+    expect(result.series.map((entry) => entry.virtualKey).sort()).toEqual([
+      'hermes-lea',
+      'hermes-leo',
+    ])
+    expect(modelTotals(result.samples)).toEqual(
+      new Map([
+        ['hermes-leo', 2],
+        ['hermes-lea', 4],
+      ]),
+    )
+  })
+
+  it('keeps the exact same sum whatever the bucket, and totals match the curve', () => {
+    const rows = [
+      row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'a', backfill: '' }, [
+        ['2026-11-01T00:00:00Z', 1],
+        ['2026-11-02T00:00:00Z', 4],
+        ['2026-11-03T00:00:00Z', 2],
+        ['2026-11-04T00:00:00Z', 7],
+      ]),
+      row(
+        { virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'b', backfill: 'opencode' },
+        [
+          ['2026-11-01T00:00:00Z', 2.5],
+          ['2026-11-02T00:00:00Z', 3.5],
+        ],
+      ),
+      row({ virtual_key_name: 'hermes-lea', provider: 'p', model: 'c', backfill: 'hermes' }, [
+        ['2026-11-01T00:00:00Z', 10],
+        ['2026-11-02T00:00:00Z', 12],
+        ['2026-11-03T00:00:00Z', 4],
+      ]),
+    ]
+    const fine = reconstructBifrostCost(rows, plan)
+    const coarsePlan: SpendHistoryPlan = {
+      ...plan,
+      bucketSeconds: 6 * 3600,
+      stepSeconds: 6 * 3600,
+      queryStepSeconds: 6 * 3600,
+      reconstructFrom: Math.floor(plan.from.getTime() / 1000 / (6 * 3600)) * 6 * 3600,
+    }
+    const coarse = reconstructBifrostCost(rows, coarsePlan)
+    expect(curveTotals(coarse.series)).toEqual(curveTotals(fine.series))
+    expect(modelTotals(coarse.samples)).toEqual(modelTotals(fine.samples))
+    expect(modelTotals(fine.samples)).toEqual(curveTotals(fine.series))
+
+    const report = makeReport(now, '1m', {
+      ...goFixture(),
+      cost: fine.samples,
+    })
+    for (const [key, total] of curveTotals(fine.series)) {
+      expect(report.people.find((person) => person.virtualKey === key)?.cost).toBeCloseTo(total)
+    }
+    for (const [key, total] of modelTotals(fine.samples)) {
+      expect(report.people.find((person) => person.virtualKey === key)?.cost).toBeCloseTo(total)
+    }
   })
 })

@@ -2,7 +2,7 @@ import type { HistoryRange, QuotaWindow, SpendWindow } from './types'
 
 export const PARIS_TIME_ZONE = 'Europe/Paris'
 
-export const SPEND_WINDOWS: readonly SpendWindow[] = ['1m', '3m', '6m', '1y']
+export const SPEND_WINDOWS: readonly SpendWindow[] = ['1m', '3m', '6m', '1y', 'all']
 export const HISTORY_RANGES: readonly HistoryRange[] = ['7d', '30d', '90d']
 export const QUOTA_WINDOWS: readonly QuotaWindow[] = ['monthly', 'weekly', 'daily', 'rolling']
 
@@ -62,6 +62,15 @@ const utcDateCompact = new Intl.DateTimeFormat('fr-FR', {
   timeZone: 'UTC',
   day: '2-digit',
   month: '2-digit',
+})
+
+const utcDayTime = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
 })
 
 interface ZonedParts {
@@ -153,7 +162,7 @@ export interface WindowBounds {
 }
 
 export function normalizeSpendWindow(value: string | undefined): SpendWindow {
-  return value === '3m' || value === '6m' || value === '1y' ? value : '1m'
+  return value === '3m' || value === '6m' || value === '1y' || value === 'all' ? value : '1m'
 }
 
 export function normalizeHistoryRange(value: string | undefined): HistoryRange {
@@ -170,12 +179,25 @@ export function normalizeQuotaWindow(value: string | undefined): QuotaWindow {
 /**
  * Calendar windows in Europe/Paris. One month means the current calendar month;
  * longer choices walk back whole months and still start on the 1st at 00:00.
- * Prometheus needs at least five minutes, even in the first seconds of a month.
+ * "Depuis le début" is a rolling two-year search: the curve only starts at the
+ * first sample that actually exists. Prometheus needs at least five minutes,
+ * even in the first seconds of a month.
  */
 export function windowBounds(now: Date, id: SpendWindow): WindowBounds {
-  const months = id === '3m' ? 3 : id === '6m' ? 6 : id === '1y' ? 12 : 1
-  const label = id === '3m' ? '3 mois' : id === '6m' ? '6 mois' : id === '1y' ? '1 an' : '1 mois'
-  const from = startOfParisMonth(now, months)
+  const label =
+    id === '3m'
+      ? '3 mois'
+      : id === '6m'
+        ? '6 mois'
+        : id === '1y'
+          ? '1 an'
+          : id === 'all'
+            ? 'Depuis le début'
+            : '1 mois'
+  const from =
+    id === 'all'
+      ? new Date(now.getTime() - 2 * 365.25 * 24 * 60 * 60 * 1000)
+      : startOfParisMonth(now, id === '3m' ? 3 : id === '6m' ? 6 : id === '1y' ? 12 : 1)
   const seconds = Math.max(300, Math.floor((now.getTime() - from.getTime()) / 1000))
   return { from, range: `${seconds}s`, label }
 }
@@ -232,7 +254,9 @@ export function spendWindowLabel(window: SpendWindow): string {
       ? '6 mois'
       : window === '1y'
         ? '1 an'
-        : '1 mois'
+        : window === 'all'
+          ? 'Depuis le début'
+          : '1 mois'
 }
 
 export function formatParisDate(value: Date | number | string | null | undefined): string {
@@ -295,6 +319,14 @@ export function formatUtcDateCompact(value: Date | number | string | null | unde
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return utcDateCompact.format(date)
+}
+
+/** Fine-grained UTC bucket label: "31 oct. 2026, 23:00", never a bare day. */
+export function formatUtcDayTime(value: Date | number | string | null | undefined): string {
+  if (value == null) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return utcDayTime.format(date)
 }
 
 export function relativeTime(value: number | string | Date, now = Date.now()): string {

@@ -13,11 +13,12 @@ export function SourceNotes() {
             Bifrost · compteurs
           </p>
           <p className="text-muted-foreground mt-1 leading-relaxed">
-            <code className="font-mono text-[11px]">increase()</code> sur les compteurs{' '}
-            <code className="font-mono text-[11px]">bifrost_*_total</code>. Un redémarrage du
-            gateway coupe le cumul. Les clés{' '}
-            <code className="font-mono text-[11px]">hermes-leo</code> et{' '}
-            <code className="font-mono text-[11px]">hermes-lea</code> sont exclues.
+            Coût reconstruit depuis le compteur cumulatif brut{' '}
+            <code className="font-mono text-[11px]">bifrost_cost_total</code>, avec baseline avant
+            la période et redémarrages traités. Les tokens et le cache utilisent{' '}
+            <code className="font-mono text-[11px]">increase()</code>. Toutes les clés sont
+            incluses, y compris <code className="font-mono text-[11px]">hermes-leo</code> et{' '}
+            <code className="font-mono text-[11px]">hermes-lea</code>.
           </p>
         </div>
         <div>
@@ -29,15 +30,15 @@ export function SourceNotes() {
             Valeur courante des jauges{' '}
             <code className="font-mono text-[11px]">hermes_window_*</code> pour{' '}
             <code className="font-mono text-[11px]">leo</code> et{' '}
-            <code className="font-mono text-[11px]">lea</code>. Le cache reste hors de l’entrée. Les
-            deux sources ne sont jamais additionnées.
+            <code className="font-mono text-[11px]">lea</code>. Le cache reste hors de l’entrée.
+            C’est la même consommation que les clés Bifrost Hermes, vue par personne.
           </p>
         </div>
       </div>
       <p className="text-muted-foreground mt-3 flex items-start gap-1.5 text-xs">
         <ArrowLeftRight className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        Les tableaux Hermes ne sont jamais ajoutés au tableau Bifrost. Les lignes agent du rapport
-        Bifrost sont masquées pour éviter un double affichage.
+        Les tableaux Hermes ne sont jamais ajoutés au tableau Bifrost : ils détaillent le même
+        périmètre par personne, sans second montant.
       </p>
     </details>
   )

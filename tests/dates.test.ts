@@ -7,6 +7,7 @@ import {
   formatParisDayTime,
   formatUtcDate,
   formatUtcDateCompact,
+  formatUtcDayTime,
   historyRangeStart,
   normalizeHistoryRange,
   normalizeQuotaWindow,
@@ -44,6 +45,20 @@ describe('Europe/Paris calendar windows', () => {
     }
   })
 
+  it('labels "Depuis le début" as a two-year search', () => {
+    const now = new Date('2026-11-12T10:00:00Z')
+    const bounds = windowBounds(now, 'all')
+    expect(bounds.label).toBe('Depuis le début')
+    const ageDays = (now.getTime() - bounds.from.getTime()) / 86_400_000
+    expect(ageDays).toBeGreaterThan(730)
+    expect(ageDays).toBeLessThan(731.5)
+  })
+
+  it('formats a fine UTC bucket with its hour', () => {
+    const value = Date.parse('2026-10-31T23:00:00Z')
+    expect(formatUtcDayTime(value)).toMatch(/31\s+oct\..*23:00/)
+  })
+
   it('uses at least five minutes of range', () => {
     const bounds = windowBounds(new Date('2026-11-01T00:00:10+01:00'), '1m')
     expect(bounds.range).toBe('300s')
@@ -56,6 +71,7 @@ describe('Europe/Paris calendar windows', () => {
 
   it('normalizes selectors and keeps daily and rolling_5h selectable', () => {
     expect(normalizeSpendWindow('3m')).toBe('3m')
+    expect(normalizeSpendWindow('all')).toBe('all')
     expect(normalizeSpendWindow('nope')).toBe('1m')
     expect(normalizeQuotaWindow('weekly')).toBe('weekly')
     expect(normalizeQuotaWindow('daily')).toBe('daily')

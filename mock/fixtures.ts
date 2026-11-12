@@ -399,6 +399,35 @@ export function createMockModel(scenario: MockScenario, now = new Date()): MockM
       tokensOut: 3_200,
       cacheRead: 12_000,
     },
+    {
+      // A second model series for one key: the curve must keep model identity.
+      virtualKey: 'tailscale-baptiste',
+      provider: 'opencode-go',
+      model: 'glm-5.3-flash',
+      cost: 6.2,
+      tokensIn: 340_000,
+      tokensOut: 22_000,
+      cacheRead: 120_000,
+    },
+    {
+      // Hermes keys are real Bifrost keys and must stay in the Bifrost table.
+      virtualKey: 'hermes-leo',
+      provider: 'opencode-go',
+      model: 'deepseek-v4.1-flash',
+      cost: 4.2,
+      tokensIn: 310_000,
+      tokensOut: 19_000,
+      cacheRead: 140_000,
+    },
+    {
+      virtualKey: 'hermes-lea',
+      provider: 'bedrock',
+      model: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
+      cost: 12.5,
+      tokensIn: 210_000,
+      tokensOut: 9_000,
+      cacheRead: 80_000,
+    },
   ]
 
   if (scenario === 'longnames') {
@@ -688,7 +717,7 @@ function quotaWindowFromQuery(query: string): ExporterQuotaWindow | null {
 }
 
 function spendWindowFromQuery(query: string): SpendWindow | null {
-  const match = query.match(/window="(1m|3m|6m|1y)"/)
+  const match = query.match(/window="(1m|3m|6m|1y|all)"/)
   if (!match) return null
   return match[1] as SpendWindow
 }
@@ -1096,9 +1125,10 @@ function quotaHistory(model: MockModel, params: URLSearchParams, query: string):
 }
 
 const HISTORY_BACKFILL_DAYS = 120
-const HISTORY_RESET_DAYS = 10
-const HISTORY_PAUSE_START_DAYS = 9
-const HISTORY_PAUSE_END_DAYS = 5
+const HISTORY_LIVE_START_DAYS = 20
+const HISTORY_RESET_DAYS = 8
+const HISTORY_PAUSE_START_DAYS = 15
+const HISTORY_PAUSE_END_DAYS = 13
 
 /**
  * Deterministic daily increment. Summing these values gives the cumulative
@@ -1106,38 +1136,76 @@ const HISTORY_PAUSE_END_DAYS = 5
  * same delta reconstruction as production instead of pre-computed buckets.
  */
 function historyIncrement(person: FixturePerson, day: number): number {
-  const variation = 0.6 + (hash(`${person.virtualKey}:${day}`) % 800) / 1000
+  const variation = 0.6 + (hash(`${person.virtualKey}:${person.model}:${day}`) % 800) / 1000
   return (person.cost / 30) * variation
 }
 
-function historyCumulative(
+function historyBackfillName(person: FixturePerson): string {
+  return person.virtualKey.startsWith('hermes-') ? 'hermes' : 'opencode'
+}
+
+function historyDay(now: number): number {
+  return Math.floor(now / DAY)
+}
+
+/**
+ * Backfill series: a cumulative counter written once per day at 23:59 UTC. The
+ * first sample of a series is its first activity day, so the server must charge
+ * it from zero. The value only moves when the next daily sample arrives.
+ */
+function historyBackfillCumulative(
   model: MockModel,
   person: FixturePerson,
   timestamp: number,
 ): number | null {
   const now = model.now.getTime() / 1000
-  const historyStartDay = Math.floor((now - HISTORY_BACKFILL_DAYS * DAY) / DAY)
-  // A 00:02 evaluation reads the counter as it stood at 23:59 for the day
-  // that just ended. This mirrors the backfill samples used in production.
-  const lastDay = Math.floor((timestamp - 180) / DAY)
-  if (lastDay < historyStartDay) return null
-
-  let firstDay = historyStartDay
-  if (person.virtualKey === 'atlas') {
-    const resetDay = Math.floor((now - HISTORY_RESET_DAYS * DAY) / DAY)
-    if (lastDay >= resetDay) firstDay = Math.max(firstDay, resetDay)
-  }
-  if (person.virtualKey === 'open-code-cli-poste-de-travail') {
-    const pauseStart = now - HISTORY_PAUSE_START_DAYS * DAY
-    const pauseEnd = now - HISTORY_PAUSE_END_DAYS * DAY
-    if (timestamp >= pauseStart && timestamp < pauseEnd) return null
-  }
-
+  const firstDay = historyDay(now - HISTORY_BACKFILL_DAYS * DAY)
+  const lastDay = historyDay(now - HISTORY_LIVE_START_DAYS * DAY) - 1
+  const consumedDay = historyDay(timestamp) - 1
+  if (consumedDay < firstDay || consumedDay > lastDay) return null
   let total = 0
-  for (let day = firstDay; day <= lastDay; day += 1) {
+  for (let day = firstDay; day <= consumedDay; day += 1) {
     total += historyIncrement(person, day)
   }
   return total
+}
+
+/**
+ * Live series: a cumulative counter scraped every step. It changes inside the
+ * day, so fine buckets must stay meaningful. A reset restarts the counter from
+ * zero; a pause makes the series disappear and reappear without a false spike.
+ */
+function historyLiveCumulative(
+  model: MockModel,
+  person: FixturePerson,
+  timestamp: number,
+): number | null {
+  const now = model.now.getTime() / 1000
+  const liveStart = historyDay(now - HISTORY_LIVE_START_DAYS * DAY) * DAY
+  if (timestamp < liveStart) return null
+
+  const pauseStart = now - HISTORY_PAUSE_START_DAYS * DAY
+  const pauseEnd = now - HISTORY_PAUSE_END_DAYS * DAY
+  if (person.virtualKey === 'open-code-cli-poste-de-travail') {
+    if (timestamp >= pauseStart && timestamp < pauseEnd) return null
+  }
+
+  let start = liveStart
+  if (person.virtualKey === 'atlas') {
+    const reset = historyDay(now - HISTORY_RESET_DAYS * DAY) * DAY
+    if (timestamp >= reset) start = reset
+  }
+  if (timestamp < start) return null
+
+  const elapsed = timestamp - start
+  const days = Math.floor(elapsed / DAY)
+  let total = 0
+  for (let day = 0; day < days; day += 1) {
+    total += historyIncrement(person, historyDay(start) + day)
+  }
+  // The first sample after a reset is already non-zero, as on the gateway.
+  const fraction = Math.max((elapsed % DAY) / DAY, 1 / 24)
+  return total + historyIncrement(person, historyDay(start) + days) * fraction
 }
 
 function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
@@ -1150,58 +1218,73 @@ function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
 
   const rows: { metric: Record<string, string>; values: [number, string][] }[] = []
   for (const person of model.people) {
-    const values: [number, string][] = []
+    const backfillValues: [number, string][] = []
+    const liveValues: [number, string][] = []
     for (let timestamp = start; timestamp <= end; timestamp += step) {
-      const value = historyCumulative(model, person, timestamp)
-      if (value == null) continue
-      values.push([timestamp, value.toFixed(6)])
+      const backfill = historyBackfillCumulative(model, person, timestamp)
+      if (backfill != null) backfillValues.push([timestamp, backfill.toFixed(6)])
+      const live = historyLiveCumulative(model, person, timestamp)
+      if (live != null) liveValues.push([timestamp, live.toFixed(6)])
     }
-    if (values.length > 0) {
+    if (backfillValues.length > 0) {
+      rows.push({
+        metric: {
+          virtual_key_name: person.virtualKey,
+          provider: person.provider,
+          model: person.model,
+          backfill: historyBackfillName(person),
+        },
+        values: backfillValues,
+      })
+    }
+    if (liveValues.length > 0) {
       rows.push({
         metric: {
           virtual_key_name: person.virtualKey,
           provider: person.provider,
           model: person.model,
         },
-        values,
+        values: liveValues,
       })
     }
   }
 
-  // A new model appears late with a high cumulative backfill value: its first
-  // sample is a baseline, never a spike on the day it lands.
-  const newModel = model.people.find((person) => person.virtualKey === 'atlas')
-  if (newModel) {
-    const values: [number, string][] = []
-    for (let timestamp = start; timestamp <= end; timestamp += step) {
-      const daysAgo = (model.now.getTime() / 1000 - timestamp) / DAY
-      if (daysAgo < 0 || daysAgo > 2.5) continue
-      values.push([timestamp, (100 + (2.5 - daysAgo) * 2).toFixed(6)])
-    }
-    if (values.length > 0) {
-      rows.push({
-        metric: {
-          virtual_key_name: newModel.virtualKey,
-          provider: 'opencode-go',
-          model: 'backfill-new-model',
-          backfill: 'opencode',
-        },
-        values,
-      })
-    }
-  }
-
-  // One datapoint only: not datable, so the curve must ignore this key.
-  const singleTimestamp = Math.floor((model.now.getTime() / 1000 - DAY) / step) * step
+  // A backfill model appears late with a non-zero first day: its delta from
+  // zero is valid, not a spike caused by aggregating keys before deltas.
+  const lateStart = Math.floor((model.now.getTime() / 1000 - 3 * DAY) / step) * step
+  const lateValues: [number, string][] = [
+    [lateStart, '2.5'],
+    [lateStart + step, '2.8'],
+  ]
   rows.push({
     metric: {
-      virtual_key_name: 'atelier-backfill',
+      virtual_key_name: 'tailscale-baptiste',
       provider: 'opencode-go',
-      model: 'single-sample',
+      model: 'late-backfill-model',
       backfill: 'opencode',
     },
-    values: [[singleTimestamp, '500']],
+    values: lateValues.filter(([timestamp]) => timestamp <= end),
   })
+
+  // One isolated backfill point: the first day of activity is still datable.
+  const isolatedTarget = model.now.getTime() / 1000 - 5 * DAY
+  const isolatedValues: [number, string][] = []
+  for (let timestamp = start; timestamp <= end; timestamp += step) {
+    if (timestamp >= isolatedTarget && timestamp < isolatedTarget + step) {
+      isolatedValues.push([timestamp, '0.75'])
+    }
+  }
+  if (isolatedValues.length > 0) {
+    rows.push({
+      metric: {
+        virtual_key_name: 'backfill-isolated',
+        provider: 'opencode-go',
+        model: 'single-sample',
+        backfill: 'opencode',
+      },
+      values: isolatedValues,
+    })
+  }
 
   return { status: 200, body: matrix(rows) }
 }

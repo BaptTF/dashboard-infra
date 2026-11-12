@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildSpendHistoryQuery, spendHistoryPlan, spendHistorySeries } from '~/lib/spend'
+import { PrometheusClient } from '~/lib/prometheus.server'
+import {
+  buildSpendCostQuery,
+  reconstructBifrostCost,
+  spendHistoryPlan,
+  sumPeople,
+} from '~/lib/spend'
+import { fetchSpendHistory, fetchSpendReport } from '~/lib/spend.server'
+import type { PrometheusConfig } from '~/lib/prometheus.server'
 import {
   MOCK_SCENARIOS,
   createMockModel,
@@ -134,16 +142,19 @@ describe('deterministic Prometheus mock', () => {
     const long = vector(
       instant('increase(bifrost_cost_total{virtual_key_name!~"hermes"}[2592000s])'),
     )
-    expect(short).toHaveLength(4)
+    expect(short).toHaveLength(7)
     expect(Number(long[0]?.value[1])).toBeGreaterThan(Number(short[0]?.value[1]))
+    const all = vector(instant('bifrost_cost_total'))
+    expect(all.some((row) => row.metric.virtual_key_name === 'hermes-leo')).toBe(true)
+    expect(all.some((row) => row.metric.virtual_key_name === 'hermes-lea')).toBe(true)
   })
 
-  it('serves cumulative Bifrost history that yields several curve points', () => {
+  it('serves cumulative Bifrost history with backfill, live and fine buckets', () => {
     const plan = spendHistoryPlan('1m', now)
     const response = handlePrometheusRequest(
       '/api/v1/query_range',
       new URLSearchParams({
-        query: buildSpendHistoryQuery(plan.bucket),
+        query: buildSpendCostQuery(),
         start: String(plan.queryFrom.getTime() / 1000),
         end: String(now.getTime() / 1000),
         step: String(plan.queryStepSeconds),
@@ -152,8 +163,8 @@ describe('deterministic Prometheus mock', () => {
       now,
     )
     const rows = matrix(response)
-    expect(rows).toHaveLength(6)
-    const series = spendHistorySeries(
+    expect(rows.length).toBeGreaterThan(7)
+    const { series, samples } = reconstructBifrostCost(
       rows.map((row) => ({
         labels: row.metric,
         points: row.values.map(([timestamp, value]) => ({
@@ -163,29 +174,36 @@ describe('deterministic Prometheus mock', () => {
       })),
       plan,
     )
-    expect(series).toHaveLength(4)
-    // 1m must not collapse to the two points of the old increase() query.
-    for (const entry of series) expect(entry.points.length).toBeGreaterThan(2)
-    expect(series.some((entry) => entry.points.some((point) => point.value > 0))).toBe(true)
+    expect(series.some((entry) => entry.virtualKey === 'hermes-leo')).toBe(true)
+    expect(series.some((entry) => entry.virtualKey === 'hermes-lea')).toBe(true)
+    // Live counters really benefit from the hourly bucket.
+    const baptiste = series.find((entry) => entry.virtualKey === 'tailscale-baptiste')
+    expect(baptiste?.points.length).toBeGreaterThan(20)
+    // Backfill series are dated by their consumed day and keep several points.
+    expect(series.some((entry) => entry.points.length > 2)).toBe(true)
 
-    // The late high-cumulative model and the single-sample backfill must not
-    // create a spike or an invented line.
-    expect(series.some((entry) => entry.virtualKey === 'atelier-backfill')).toBe(false)
-    const largest = Math.max(
-      ...series.flatMap((entry) => entry.points.map((point) => point.value)),
-      Number.NEGATIVE_INFINITY,
-    )
-    expect(largest).toBeLessThan(100)
+    // The isolated backfill point is charged as a first day of activity.
+    const isolated = series.find((entry) => entry.virtualKey === 'backfill-isolated')
+    expect(isolated?.points).toHaveLength(1)
+    expect(isolated?.points[0]?.value).toBeCloseTo(0.75)
 
-    const atlas = series.find((entry) => entry.virtualKey === 'atlas')
-    expect(atlas?.points.some((point) => point.value > 0)).toBe(true)
-    const paused = series.find((entry) => entry.virtualKey === 'open-code-cli-poste-de-travail')
-    expect(paused?.points.length).toBeLessThan(
-      Math.max(...series.map((entry) => entry.points.length)),
-    )
+    // A late backfill model is charged from zero, without a false spike.
+    const late = samples
+      .filter((entry) => entry.labels.model === 'late-backfill-model')
+      .reduce((sum, entry) => sum + entry.value, 0)
+    expect(late).toBeCloseTo(2.8)
+
+    // Every key has a curve total equal to its model total.
+    for (const entry of series) {
+      const total = entry.points.reduce((sum, point) => sum + point.value, 0)
+      const modelTotal = samples
+        .filter((sample) => sample.labels.virtual_key_name === entry.virtualKey)
+        .reduce((sum, sample) => sum + sample.value, 0)
+      expect(modelTotal).toBeCloseTo(total)
+    }
   })
 
-  it('returns Hermes window gauges and Bifrost-shaped agent rows', () => {
+  it('serves Hermes window gauges and Bifrost-shaped agent rows', () => {
     const leo = vector(instant('hermes_window_cost_usd{agent="leo",window="1m"}'))
     expect(leo.some((row) => row.metric.user === 'Camille')).toBe(true)
     const window = vector(instant('bifrost_window_cost_usd{window="1m"}'))
@@ -256,5 +274,64 @@ describe('deterministic Prometheus mock', () => {
     const firstTimestamp = rows[0]?.values[0]?.[0] ?? 0
     expect(firstTimestamp).toBeGreaterThanOrEqual(model.deploymentAt.getTime() / 1000)
     expect(firstTimestamp).toBeGreaterThan(start)
+  })
+})
+
+function mockClient(scenario: MockScenario = 'nominal') {
+  return new PrometheusClient('http://mock.test', 5_000, (async (input: URL | string) => {
+    const url = new URL(String(input))
+    const response = handlePrometheusRequest(url.pathname, url.searchParams, scenario, now)
+    return new Response(
+      typeof response.body === 'string' ? response.body : JSON.stringify(response.body),
+      { status: response.status, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as typeof fetch)
+}
+
+const config: PrometheusConfig = {
+  baseUrl: 'http://mock.test',
+  configured: true,
+  mockMode: true,
+  timeoutMs: 5_000,
+}
+
+describe('report and history share one Bifrost cost truth', () => {
+  it('makes the curve sum equal each key cost for 1m, 3m and all', async () => {
+    const client = mockClient()
+    for (const window of ['1m', '3m', 'all'] as const) {
+      const report = await fetchSpendReport(client, config, window, now)
+      const history = await fetchSpendHistory(client, config, window, now)
+      expect(report.error).toBeUndefined()
+      expect(history.error).toBeUndefined()
+      expect(report.people.some((person) => person.virtualKey === 'hermes-leo')).toBe(true)
+      expect(report.people.some((person) => person.virtualKey === 'hermes-lea')).toBe(true)
+      expect(report.people.filter((person) => person.virtualKey === 'hermes-leo')).toHaveLength(1)
+
+      for (const entry of history.series) {
+        const curve = entry.points.reduce((sum, point) => sum + point.value, 0)
+        const person = report.people.find((row) => row.virtualKey === entry.virtualKey)
+        expect(person?.cost).toBeCloseTo(curve)
+      }
+      const bifrost = sumPeople(report.people, 'bifrost').cost
+      const curve = history.series.reduce(
+        (sum, entry) => sum + entry.points.reduce((total, point) => total + point.value, 0),
+        0,
+      )
+      expect(bifrost).toBeCloseTo(curve)
+      // Hermes views are a second presentation, never an extra amount.
+      expect(report.leo.length).toBeGreaterThan(0)
+      expect(report.lea.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('starts all-time at the first real sample, not at the two-year limit', async () => {
+    const client = mockClient()
+    const history = await fetchSpendHistory(client, config, 'all', now)
+    expect(history.granularity).toBe('day')
+    expect(history.firstSampleAt).not.toBeNull()
+    const first = Date.parse(history.firstSampleAt ?? '')
+    expect(first).toBeLessThan(now.getTime() - 100 * 86_400_000)
+    expect(first).toBeGreaterThan(now.getTime() - 2 * 365.25 * 86_400_000)
+    expect(Date.parse(history.from)).toBeLessThan(first)
   })
 })

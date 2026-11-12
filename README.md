@@ -4,10 +4,10 @@ Tableau de bord de monitoring des **abonnements IA** et de la **consommation Bif
 
 Deux vues, une même source serveur :
 
-| Route                              | Contenu                                                                                                                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/` — **Abonnements**              | Maillon faible, jours à sec, quotas OpenCode / Cursor / Devin, prix connu sur la carte du fournisseur, poids dans la carte OpenCode, collecte par abonnement et historique des quotas. |
-| `/consommation` — **Consommation** | Quatre indicateurs utiles (coût et tokens Bifrost, cache, coût Hermes), drill-down personne → fournisseur → modèle, filtre de source cohérent et courbe de coût par jour/semaine.      |
+| Route                              | Contenu                                                                                                                                                                                      |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/` — **Abonnements**              | Maillon faible, jours à sec, quotas OpenCode / Cursor / Devin, prix connu sur la carte du fournisseur, poids dans la carte OpenCode, collecte par abonnement et historique des quotas.       |
+| `/consommation` — **Consommation** | Quatre indicateurs utiles (coût et tokens Bifrost, cache, coût Hermes), drill-down personne → fournisseur → modèle, filtre de source cohérent et courbe de coût avec granularité adaptative. |
 
 L'interface est en français, les heures et fenêtres calendaires sont en **Europe/Paris**. Thème clair, sombre ou système, avec bascule manuelle persistée. Aucune donnée de production n'est versionnée dans ce dépôt public : le mock et les fixtures sont entièrement anonymisés.
 
@@ -132,18 +132,19 @@ Les poids restent dans la carte **OpenCode**, avec la fraîcheur du sidecar sur 
 
 Le portage reprend les règles de `internal/spend/client.go` :
 
-- **Bifrost** : `increase()` sur `bifrost_cost_total`, `bifrost_input_tokens_total`, `bifrost_output_tokens_total`, `bifrost_cache_read_input_tokens_total`. Les compteurs redémarrent avec le gateway.
+- **Bifrost coût** : une seule reconstruction depuis le compteur cumulatif brut `bifrost_cost_total`, avec baseline avant la période et redémarrages traités. La courbe et les totaux Bifrost (cartes, tableau, fournisseur, modèle) partagent exactement la même source.
+- **Bifrost tokens/cache** : `increase()` sur `bifrost_input_tokens_total`, `bifrost_output_tokens_total`, `bifrost_cache_read_input_tokens_total`. Les compteurs redémarrent avec le gateway.
 - **Hermes** : valeur courante des jauges `hermes_window_cost_usd`, `hermes_window_tokens`, `hermes_window_sessions` pour `agent="leo"` et `agent="lea"`.
-- Les clés `hermes-lea` et `hermes-leo` sont exclues des compteurs Bifrost. Si les jauges Hermes les fournissent, elles remplacent la ligne agent, sans doublon.
+- Toutes les clés Bifrost sont incluses, y compris `hermes-lea` et `hermes-leo`. Les tableaux Hermes restent une vue par personne du même périmètre : ils ne sont jamais ajoutés au tableau Bifrost.
 - Les séries Hermes sans fournisseur sont ignorées dès qu'une ventilation par fournisseur existe (ancien exporter).
-- Le cache Hermes reste hors de l'entrée ; il est réintégré uniquement dans la vue Bifrost reconstituée.
+- Le cache Hermes reste hors de l'entrée ; la vue Bifrost compte le cache lu dans sa colonne dédiée.
 - Les sessions de modèle ne sont pas additionnées au total d'une personne (une session peut utiliser plusieurs modèles).
-- Les périodes `1m`, `3m`, `6m`, `1y` sont calendaires, depuis le 1er à 00:00 **Europe/Paris**.
-- Les deux sources ne sont **jamais additionnées** : les tableaux et totaux sont distincts, les lignes agent Hermes sont masquées du tableau Bifrost.
+- Les périodes `1m`, `3m`, `6m`, `1y` sont calendaires, depuis le 1er à 00:00 **Europe/Paris**. `all` (« Depuis le début ») cherche au maximum deux ans et affiche depuis la première donnée réellement disponible.
+- Les buckets de coût sont en **UTC** et libellés comme tels ; la période sélectionnée reste en Europe/Paris.
 
 Le drill-down personne → fournisseur → modèle est local et accessible au clavier. Le filtre de source pilote à la fois les cartes, les tableaux et la courbe : choisir Léo ou Léa masque Bifrost et l'historique Bifrost. Quatre indicateurs suffisent (coût Bifrost, tokens entrée + sortie, cache, coût Hermes Léo/Léa), les notes techniques sont repliées dans un unique `<details>`.
 
-La courbe de coût Bifrost est reconstruite depuis le **compteur brut cumulatif** `bifrost_cost_total`, dédupliqué et **groupé par clé, fournisseur, modèle et backfill** : chaque série modèle garde son identité, sinon un backfill qui apparaît avec son cumul serait pris pour un pic de consommation. La requête de référence couvre environ **400 jours**, avec une évaluation par jour alignée à **00:02 UTC**, pour toutes les périodes affichées ; chaque évaluation lit la dernière valeur de chaque série sur 1 jour. Le serveur ignore le premier échantillon de chaque série (aucun prédécesseur), calcule les deltas suivants, traite une baisse comme un redémarrage (`delta = valeur courante`) puis agrège par clé et par jour UTC. Les périodes `1m`, `3m`, `6m` gardent le pas jour ; `1y` regroupe les deltas par semaine UTC. Le point est daté à **23:59 UTC du jour réellement consommé**. Les clés Hermes sont exclues et aucune source legacy `main`/`default` n'est réintroduite. Un backfill à échantillon unique n'est pas plaçable et n'apparaît pas : **la somme de la courbe peut donc être inférieure aux totaux de la table**, qui incluent tout le backfill. La courbe ne promet pas un mois complet et n'invente pas de jours sans données. Les pas manquants sont des `null` explicites (`connectNulls: false`) : un trou de collecte reste visible au lieu d'être relié par une droite. Le zoom est conservé lors d'un rafraîchissement de la même période et réinitialisé quand la fenêtre ou la période change.
+La courbe de coût Bifrost est reconstruite depuis le **compteur brut cumulatif** `bifrost_cost_total`, dédupliqué et **groupé par clé, fournisseur, modèle et backfill** : chaque série garde son identité, donc l'apparition ou la disparition d'une série ne provoque ni chute ni faux pic. Une requête de référence quotidienne couvre jusqu'à deux ans pour trouver un **baseline avant la période** (dernier échantillon ≤ début). Sans baseline, le premier échantillon est chargé depuis zéro : c'est le premier jour d'activité d'un backfill, ou le coût depuis reset d'un compteur live. Une baisse est un redémarrage (`delta = valeur courante`), puis les deltas sont agrégés par bucket UTC, par clé pour la courbe et par clé/fournisseur/modèle pour les totaux. Les coûts backfill restent datés au jour consommé (échantillons souvent à 23:59 UTC) ; les compteurs live profitent de la granularité fine. Granularité : `1m` = 1 h, `3m` = 6 h, `6m` = 12 h, `1y`/`all` = 1 jour. **La somme des points de la courbe par clé égale son coût Bifrost affiché** (tolérance d'arrondi), quel que soit le bucket ; le tableau accessible peut être downsamplé, mais le total affiché est toujours la somme réelle des séries. La courbe ne complète jamais les jours manquants : les pas absents sont des `null` explicites (`connectNulls: false`). Le zoom est conservé lors d'un rafraîchissement de la même période et réinitialisé quand la fenêtre ou la période change.
 
 ## Architecture et sécurité
 
@@ -235,7 +236,7 @@ npm run test:e2e
 npm run build
 ```
 
-- Tests unitaires du portage Go : clés Bifrost, personnes Léo/Léa, sources, sessions, cache, absence de double comptage, erreur globale, fenêtres Paris.
+- Tests unitaires du portage Go : clés Bifrost (Hermes incluses), personnes Léo/Léa, sources, sessions, cache, absence de double comptage, reconstruction exacte (baseline, premier jour backfill, reset, point isolé, granularité fine, all-time), égalité stricte courbe ↔ totaux, erreur globale, fenêtres Paris.
 - Tests des transformations d'abonnements : jointure provider normalisée / subscription insensible à la casse, poids zéro, cycles ACU, seuils, collecte partielle, stale.
 - Tests du client Prometheus : vecteurs, matrices, valeurs négatives, NaN, JSON invalide, HTTP, timeout et configuration.
 - Tests composants : barre de quota accessible, tableaux extensibles, conservation des données lors d'une erreur, thème persistant.

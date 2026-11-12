@@ -58,7 +58,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
           <MetricCard
             label="Bifrost · coût"
             value={formatCurrency(bifrost.cost)}
-            hint="Compteurs Bifrost sur la période"
+            hint="Compteurs Bifrost, clés Hermes incluses"
             icon={Coins}
             tone="info"
             className="h-full p-3.5"
@@ -93,7 +93,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
                 : 'Hermes · coût'
           }
           value={formatCurrency(hermesCost)}
-          hint={`${formatDecimal(hermesSessions)} sessions · cache ${formatPercent(hermesCache)}`}
+          hint={`${formatDecimal(hermesSessions)} sessions · cache ${formatPercent(hermesCache)} · vue non ajoutée`}
           icon={Users}
           tone="warning"
           className="h-full p-3.5"

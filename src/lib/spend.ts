@@ -10,6 +10,7 @@ import type {
   ModelSpend,
   PersonSpend,
   ProviderSpend,
+  SpendGranularity,
   SpendOrigin,
   SpendPersonDailySeries,
   SpendReport,
@@ -18,31 +19,31 @@ import type {
 } from './types'
 
 /**
- * Bifrost counters (cost, tokens) reset when the gateway restarts, so they use
- * increase() over the selected span. Hermes window series already hold the
- * consumption inside that span and are read as the current sample. The two
+ * Bifrost counters (cost, tokens) reset when the gateway restarts. Token and
+ * cache totals use increase() over the selected span. Cost is never taken from
+ * increase(): one reconstruction of the raw cumulative counter feeds both the
+ * history curve and the Bifrost cost totals. Hermes window series already hold
+ * the consumption inside that span and are read as the current sample. The two
  * clocks must not be added together.
  */
 export const DEDUPE = `max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)`
 export const BY_CALLER = `sum by (virtual_key_name, provider, model) (` + DEDUPE + `(increase(`
 
-const HERMES_KEYS = new Set(['hermes-lea', 'hermes-leo'])
+/** Bounded lookback: backfill samples arrive daily, live counters every scrape. */
+export const BIFROST_COST_LOOKBACK = '2d'
+export const HISTORY_REFERENCE_DAYS = 730
 
 export function normalizeWindow(id: string | undefined): SpendWindow {
-  return id === '3m' || id === '6m' || id === '1y' ? id : '1m'
+  return id === '3m' || id === '6m' || id === '1y' || id === 'all' ? id : '1m'
 }
 
 export function buildSpendQueries(id: SpendWindow, range: string): string[] {
   const hermes = (metric: string, agent: 'leo' | 'lea') =>
     `${DEDUPE}(${metric}{agent="${agent}",window="${id}"})`
-  const excluded = `virtual_key_name!~"hermes-lea|hermes-leo"`
   return [
-    `${BY_CALLER}bifrost_cost_total{${excluded}}[${range}])))`,
-    `${BY_CALLER}bifrost_input_tokens_total{${excluded}}[${range}])))`,
-    `${BY_CALLER}bifrost_output_tokens_total{${excluded}}[${range}])))`,
-    `${BY_CALLER}bifrost_cache_read_input_tokens_total{${excluded}}[${range}])))`,
-    `${DEDUPE}(bifrost_window_cost_usd{window="${id}"})`,
-    `${DEDUPE}(bifrost_window_tokens{window="${id}"})`,
+    `${BY_CALLER}bifrost_input_tokens_total[${range}])))`,
+    `${BY_CALLER}bifrost_output_tokens_total[${range}])))`,
+    `${BY_CALLER}bifrost_cache_read_input_tokens_total[${range}])))`,
     hermes('hermes_window_cost_usd', 'leo'),
     hermes('hermes_window_tokens', 'leo'),
     hermes('hermes_window_sessions', 'leo'),
@@ -53,147 +54,187 @@ export function buildSpendQueries(id: SpendWindow, range: string): string[] {
 }
 
 /**
- * Range query for the cost curve. The reference window is wide enough to find
- * a predecessor for every datable series, and the query always runs at one
- * point per day. Grouping keeps the model/backfill identity: summing raw
- * counters by key first would turn a newly backfilled model into a fake spike.
+ * Raw cumulative counter for the single cost reconstruction. The lookback keeps
+ * stale backfill series visible between their daily samples without turning a
+ * new series into a fake spike: identity is kept per key/provider/model/backfill.
  */
-export function buildSpendHistoryQuery(_bucket?: 'day' | 'week'): string {
-  return `sum by (virtual_key_name, provider, model, backfill) (${DEDUPE}(last_over_time(bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}[1d])))`
+export function buildSpendCostQuery(lookback = BIFROST_COST_LOOKBACK): string {
+  return `sum by (virtual_key_name, provider, model, backfill) (${DEDUPE}(last_over_time(bifrost_cost_total[${lookback}])))`
 }
 
-/** Evaluations land at 00:02 UTC, just after the 23:59 UTC backfill sample. */
-export const HISTORY_EVALUATION_SECONDS = 120
-export const HISTORY_REFERENCE_DAYS = 400
+/** Evaluations are aligned on UTC midnight, just after the 23:59 backfill sample. */
 const DAY_SECONDS = 86_400
+
+const GRANULARITY_SECONDS: Record<SpendWindow, number> = {
+  '1m': 3_600,
+  '3m': 6 * 3_600,
+  '6m': 12 * 3_600,
+  '1y': DAY_SECONDS,
+  all: DAY_SECONDS,
+}
+
+const GRANULARITY_LABEL: Record<SpendWindow, SpendGranularity> = {
+  '1m': 'hour',
+  '3m': '6h',
+  '6m': '12h',
+  '1y': 'day',
+  all: 'day',
+}
 
 export interface SpendHistoryPlan {
   from: Date
   to: Date
-  /** Start of the wide daily reference query, aligned on 00:02 UTC. */
+  /** Periodic query start, aligned on a UTC day so every 00:00 evaluation catches 23:59 backfill. */
   queryFrom: Date
+  /** Wide daily reference used only to seed a baseline before the period. */
+  baselineFrom: Date
   queryStepSeconds: number
-  /** Display step: one day for 1m/3m/6m, one week for 1y. */
+  /** Display step: one hour for 1m, 6h for 3m, 12h for 6m, one day for 1y/all. */
   stepSeconds: number
-  bucket: 'day' | 'week'
+  bucketSeconds: number
+  /** First bucket fully owned by the selected period, used for both curve and totals. */
+  reconstructFrom: number
+  granularity: SpendGranularity
 }
 
 function referenceWindowStart(now: Date): Date {
-  const start =
-    Math.floor((now.getTime() / 1000 - HISTORY_REFERENCE_DAYS * DAY_SECONDS) / DAY_SECONDS) *
-      DAY_SECONDS +
-    HISTORY_EVALUATION_SECONDS
-  return new Date(start * 1000)
+  return new Date(
+    (Math.floor((now.getTime() / 1000 - HISTORY_REFERENCE_DAYS * DAY_SECONDS) / DAY_SECONDS) *
+      DAY_SECONDS -
+      7 * DAY_SECONDS) *
+      1000,
+  )
 }
 
 export function spendHistoryPlan(id: SpendWindow, now: Date): SpendHistoryPlan {
   const bounds = windowBounds(now, id)
-  const bucket: 'day' | 'week' = id === '1y' ? 'week' : 'day'
-  const stepSeconds = bucket === 'day' ? DAY_SECONDS : 7 * DAY_SECONDS
+  const bucketSeconds = GRANULARITY_SECONDS[id]
+  const fromSeconds = bounds.from.getTime() / 1000
+  const queryFromSeconds = Math.floor(fromSeconds / DAY_SECONDS) * DAY_SECONDS
+  const referenceStart = referenceWindowStart(now)
+  const baselineFrom = new Date(
+    Math.min(referenceStart.getTime(), (queryFromSeconds - 7 * DAY_SECONDS) * 1000),
+  )
   return {
     from: bounds.from,
     to: now,
-    queryFrom: referenceWindowStart(now),
-    queryStepSeconds: DAY_SECONDS,
-    stepSeconds,
-    bucket,
+    queryFrom: new Date(queryFromSeconds * 1000),
+    baselineFrom,
+    queryStepSeconds: bucketSeconds,
+    stepSeconds: bucketSeconds,
+    bucketSeconds,
+    reconstructFrom: Math.floor(fromSeconds / bucketSeconds) * bucketSeconds,
+    granularity: GRANULARITY_LABEL[id],
   }
 }
 
 /**
- * An evaluation at 00:02 UTC reads the counter as it stood at 23:59 UTC for
- * the day that just ended. Shift by three minutes so the chart labels the
- * consumed day, never the new one (00:02 - 3 min = 23:59).
+ * An evaluation at 00:00 UTC reads the backfill counter as it stood at 23:59
+ * UTC for the day that just ended. Shift by three minutes so the chart labels
+ * the consumed UTC day, never the new one. Live counters keep their own time:
+ * they benefit from the finer bucket.
  */
 export function spendHistoryPointTimestamp(evaluationSeconds: number): number {
   return evaluationSeconds - 180
 }
 
-function weekStart(seconds: number): number {
-  const day = Math.floor(seconds / DAY_SECONDS) * DAY_SECONDS
-  const weekday = new Date(day * 1000).getUTCDay()
-  return day - ((weekday + 6) % 7) * DAY_SECONDS
+export interface BifrostCostReconstruction {
+  series: SpendPersonDailySeries[]
+  /** One sample per key/provider/model, used as the Bifrost cost totals. */
+  samples: MetricSample[]
 }
 
 /**
- * Rebuilds datable deltas from cumulative series. A series is identified by
- * key/provider/model/backfill: its first sample has no predecessor and is
- * ignored, so a one-sample backfill is never charged to the day it appears.
- * Decreases are gateway restarts (delta = current value). Deltas are then
- * summed by key and UTC day, and finally bucketed by week for the 1y view.
+ * Rebuilds Bifrost costs from one cumulative counter. This is the only source
+ * of truth for both the history curve and the Bifrost cost totals:
+ *
+ * - a baseline point before the period (last sample <= start) seeds the series;
+ * - without a baseline, the first sample is charged from zero: a backfill's
+ *   first day of activity, or a live counter's cost since its reset;
+ * - a decrease is a reset (delta = current value);
+ * - deltas are bucketed in UTC, then summed by key for the curve and by
+ *   key/provider/model for the report.
+ *
+ * Each series keeps its provider/model/backfill identity, so a new series that
+ * appears with a high cumulative value cannot create a false drop or spike.
  */
-export function spendHistorySeries(
+export function reconstructBifrostCost(
   rows: MetricSeries[],
   plan: SpendHistoryPlan,
-): SpendPersonDailySeries[] {
-  const fromSeconds = plan.from.getTime() / 1000
-  const toSeconds = plan.to.getTime() / 1000
+): BifrostCostReconstruction {
   const byKey = new Map<string, Map<number, number>>()
+  const byModel = new Map<string, { labels: MetricSample['labels']; cost: number }>()
+  const toSeconds = plan.to.getTime() / 1000
 
   for (const row of rows) {
     const virtualKey = (row.labels.virtual_key_name ?? '').trim()
-    if (!virtualKey || virtualKey === 'hermes-lea' || virtualKey === 'hermes-leo') continue
+    if (!virtualKey) continue
+    const provider = (row.labels.provider ?? '').trim()
+    const model = (row.labels.model ?? '').trim()
+    const backfill = (row.labels.backfill ?? '').trim()
     const points = row.points
       .filter(
         (point) =>
           Number.isFinite(point.timestamp) && Number.isFinite(point.value) && point.value >= 0,
       )
       .sort((a, b) => a.timestamp - b.timestamp)
-    if (points.length < 2) continue
+    if (points.length === 0) continue
 
+    const modelId = `${virtualKey}\u0000${provider}\u0000${model}`
     let previous: number | null = null
     for (const point of points) {
+      let delta: number
       if (previous == null) {
-        // No predecessor: the sample only defines the series baseline.
-        previous = point.value
-        continue
+        // No baseline: a backfill's first day or a live counter since reset.
+        delta = point.value
+      } else {
+        delta = point.value - previous
+        if (delta < 0) delta = point.value
       }
-      let value = point.value - previous
-      if (value < 0) value = point.value
       previous = point.value
-      const timestamp = spendHistoryPointTimestamp(point.timestamp)
-      if (timestamp < fromSeconds || timestamp > toSeconds) continue
-      let days = byKey.get(virtualKey)
-      if (!days) {
-        days = new Map()
-        byKey.set(virtualKey, days)
+      if (delta <= 0) continue
+
+      // Backfill samples are dated by their consumed UTC day; live counters
+      // keep their exact timestamp and benefit from the finer bucket.
+      const timestamp = backfill ? spendHistoryPointTimestamp(point.timestamp) : point.timestamp
+      const bucket = Math.floor(timestamp / plan.bucketSeconds) * plan.bucketSeconds
+      if (bucket < plan.reconstructFrom || bucket > toSeconds) continue
+
+      let buckets = byKey.get(virtualKey)
+      if (!buckets) {
+        buckets = new Map()
+        byKey.set(virtualKey, buckets)
       }
-      days.set(timestamp, (days.get(timestamp) ?? 0) + value)
+      buckets.set(bucket, (buckets.get(bucket) ?? 0) + delta)
+      const aggregate = byModel.get(modelId)
+      if (aggregate) aggregate.cost += delta
+      else
+        byModel.set(modelId, {
+          labels: { virtual_key_name: virtualKey, provider, model },
+          cost: delta,
+        })
     }
   }
 
   const series: SpendPersonDailySeries[] = []
-  for (const [virtualKey, days] of byKey) {
-    const points: MetricPoint[] = []
-    if (plan.bucket === 'day') {
-      for (const [timestamp, value] of [...days].sort((a, b) => a[0] - b[0])) {
-        points.push({ timestamp, value })
-      }
-    } else {
-      const weeks = new Map<number, { value: number; timestamp: number }>()
-      for (const [timestamp, value] of [...days].sort((a, b) => a[0] - b[0])) {
-        const week = weekStart(timestamp)
-        const bucket = weeks.get(week)
-        if (bucket) {
-          bucket.value += value
-          bucket.timestamp = Math.max(bucket.timestamp, timestamp)
-        } else {
-          weeks.set(week, { value, timestamp })
-        }
-      }
-      for (const [, bucket] of [...weeks].sort((a, b) => a[0] - b[0])) {
-        points.push({ timestamp: bucket.timestamp, value: bucket.value })
-      }
-    }
+  for (const [virtualKey, buckets] of byKey) {
+    const points: MetricPoint[] = [...buckets]
+      .sort((a, b) => a[0] - b[0])
+      .map(([timestamp, value]) => ({ timestamp, value }))
     if (points.length > 0) series.push({ virtualKey, points })
   }
-
   series.sort((a, b) => {
     const totalA = a.points.reduce((sum, point) => sum + point.value, 0)
     const totalB = b.points.reduce((sum, point) => sum + point.value, 0)
     return totalB - totalA || a.virtualKey.localeCompare(b.virtualKey, 'fr')
   })
-  return series
+
+  return {
+    series,
+    samples: [...byModel.values()]
+      .filter((entry) => entry.cost > 0)
+      .map((entry) => ({ labels: entry.labels, value: entry.cost })),
+  }
 }
 
 function zero(totals: Totals): boolean {
@@ -221,44 +262,6 @@ function spendLess(a: Totals, b: Totals, nameA: string, nameB: string): number {
 function leoLess(a: LeoTotals, b: LeoTotals, nameA: string, nameB: string): number {
   if (a.costUsd !== b.costUsd) return b.costUsd - a.costUsd
   return nameA.localeCompare(nameB, 'fr')
-}
-
-/** Input, output and cache read arrive on one tokens series distinguished by type. */
-export function mergeBifrost(
-  cost: MetricSample[],
-  input: MetricSample[],
-  output: MetricSample[],
-  cache: MetricSample[],
-  windowCost: MetricSample[],
-  windowTokens: MetricSample[],
-) {
-  const mergedCost = [...cost, ...windowCost]
-  const mergedInput = [...input]
-  const mergedOutput = [...output]
-  const mergedCache = [...cache]
-  for (const sample of windowTokens) {
-    switch (sample.labels.type) {
-      case 'input':
-        mergedInput.push(sample)
-        break
-      case 'output':
-        mergedOutput.push(sample)
-        break
-      case 'cache_read':
-        mergedCache.push(sample)
-        break
-    }
-  }
-  return {
-    cost: mergedCost,
-    input: mergedInput,
-    output: mergedOutput,
-    cache: mergedCache,
-  }
-}
-
-export function hasVirtualKey(samples: MetricSample[], key: string): boolean {
-  return samples.some((sample) => (sample.labels.virtual_key_name ?? '').trim() === key)
 }
 
 export function assembleReport(samples: {
@@ -343,7 +346,7 @@ export function assembleReport(samples: {
       tokensIn: person.tokensIn,
       tokensOut: person.tokensOut,
       cacheRead: person.cacheRead,
-      origin: originFor(name),
+      origin: 'bifrost',
       providers: [],
     }
     for (const [provider, providerBucket] of person.providers) {
@@ -388,121 +391,6 @@ export function assembleReport(samples: {
     (source) => source === 'telegram' || source === 'openclaw',
   )
   return { people, leo, leoOther, lea, leaOther }
-}
-
-function originFor(name: string): SpendOrigin {
-  return HERMES_KEYS.has(name) ? 'hermes' : 'bifrost'
-}
-
-/**
- * Rolls every person of one agent into the Bifrost table. Hermes keeps cache
- * reads out of input; Bifrost counts them inside input, so cached tokens are
- * added back here and the cache column stays the subset.
- */
-export function bifrostFromHermes(
-  key: string,
-  users: LeoUser[],
-  other: LeoUser | null,
-): PersonSpend {
-  const all = [...users, ...(other ? [other] : [])]
-  type ModelBucket = Totals
-  type ProviderBucket = Totals & {
-    models: Map<string, ModelBucket>
-  }
-  const providers = new Map<string, ProviderBucket>()
-  const total: Totals = { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0 }
-  const covered: Totals = { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0 }
-
-  const add = (into: Totals, cost: number, input: number, output: number, cacheRead: number) => {
-    into.cost += cost
-    into.tokensOut += output
-    into.cacheRead += cacheRead
-    into.tokensIn += input + cacheRead
-  }
-
-  for (const user of all) {
-    add(total, user.costUsd, user.tokensIn, user.tokensOut, user.cacheRead)
-    for (const provider of user.providers) {
-      const name = provider.provider.trim() || 'inconnu'
-      let destination = providers.get(name)
-      if (!destination) {
-        destination = { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, models: new Map() }
-        providers.set(name, destination)
-      }
-      add(destination, provider.costUsd, provider.tokensIn, provider.tokensOut, provider.cacheRead)
-      add(covered, provider.costUsd, provider.tokensIn, provider.tokensOut, provider.cacheRead)
-      for (const model of provider.models) {
-        const modelName = model.model.trim() || 'inconnu'
-        let modelBucket = destination.models.get(modelName)
-        if (!modelBucket) {
-          modelBucket = { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0 }
-          destination.models.set(modelName, modelBucket)
-        }
-        add(modelBucket, model.costUsd, model.tokensIn, model.tokensOut, model.cacheRead)
-      }
-    }
-  }
-
-  const costGap = total.cost - covered.cost
-  const inputGap = total.tokensIn - covered.tokensIn
-  const readGap = total.cacheRead - covered.cacheRead
-  if (costGap > 0.000001 || inputGap > 0.5) {
-    let destination = providers.get('inconnu')
-    if (!destination) {
-      destination = { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, models: new Map() }
-      providers.set('inconnu', destination)
-    }
-    add(destination, costGap, inputGap - readGap, total.tokensOut - covered.tokensOut, readGap)
-  }
-
-  const row: PersonSpend = {
-    virtualKey: key,
-    cost: total.cost,
-    tokensIn: total.tokensIn,
-    tokensOut: total.tokensOut,
-    cacheRead: total.cacheRead,
-    origin: 'hermes',
-    providers: [],
-  }
-  for (const [name, provider] of providers) {
-    if (zero(provider)) continue
-    const providerRow: ProviderSpend = {
-      provider: name,
-      cost: provider.cost,
-      tokensIn: provider.tokensIn,
-      tokensOut: provider.tokensOut,
-      cacheRead: provider.cacheRead,
-      models: [],
-    }
-    for (const [modelName, model] of provider.models) {
-      if (zero(model)) continue
-      providerRow.models.push({
-        model: modelName,
-        cost: model.cost,
-        tokensIn: model.tokensIn,
-        tokensOut: model.tokensOut,
-        cacheRead: model.cacheRead,
-      })
-    }
-    providerRow.models.sort((a, b) => spendLess(a, b, a.model, b.model))
-    row.providers.push(providerRow)
-  }
-  row.providers.sort((a, b) => spendLess(a, b, a.provider, b.provider))
-  return row
-}
-
-export function replaceAgentRow(
-  people: PersonSpend[],
-  key: string,
-  row: PersonSpend,
-): PersonSpend[] {
-  if (zero(row)) return people
-  const index = people.findIndex((person) => person.virtualKey === key)
-  if (index >= 0) {
-    people[index] = row
-    return people
-  }
-  return [...people, row]
 }
 
 /**
@@ -841,8 +729,6 @@ export function makeReport(
     input: MetricSample[]
     output: MetricSample[]
     cache: MetricSample[]
-    windowCost: MetricSample[]
-    windowTokens: MetricSample[]
     leoCost: MetricSample[]
     leoTokens: MetricSample[]
     leoSessions: MetricSample[]
@@ -853,19 +739,11 @@ export function makeReport(
   meta: { mockMode: boolean } = { mockMode: false },
 ): SpendReport {
   const bounds = windowBounds(now, id)
-  const merged = mergeBifrost(
-    samples.cost,
-    samples.input,
-    samples.output,
-    samples.cache,
-    samples.windowCost,
-    samples.windowTokens,
-  )
   const report = assembleReport({
-    cost: merged.cost,
-    input: merged.input,
-    output: merged.output,
-    cache: merged.cache,
+    cost: samples.cost,
+    input: samples.input,
+    output: samples.output,
+    cache: samples.cache,
     hermesCost: samples.leoCost,
     hermesTokens: samples.leoTokens,
     hermesSessions: samples.leoSessions,
@@ -873,21 +751,6 @@ export function makeReport(
     leaTokens: samples.leaTokens,
     leaSessions: samples.leaSessions,
   })
-
-  if (!hasVirtualKey(samples.windowCost, 'hermes-leo')) {
-    report.people = replaceAgentRow(
-      report.people,
-      'hermes-leo',
-      bifrostFromHermes('hermes-leo', report.leo, report.leoOther),
-    )
-  }
-  if (!hasVirtualKey(samples.windowCost, 'hermes-lea')) {
-    report.people = replaceAgentRow(
-      report.people,
-      'hermes-lea',
-      bifrostFromHermes('hermes-lea', report.lea, report.leaOther),
-    )
-  }
   report.people.sort((a, b) => spendLess(a, b, a.virtualKey, b.virtualKey))
 
   return {

@@ -6,8 +6,13 @@ function normalizeColor(value: string): string {
 }
 
 async function hoverChart(page: Page) {
-  const chart = page.locator('[data-data-key="bifrost-1m-day"]').first()
+  const chart = page.locator('[data-data-key="bifrost-1m-hour"]').first()
   await chart.scrollIntoViewIfNeeded()
+  // A theme stylesheet can still be settling during a dev-server reload; wait
+  // for the card token before comparing the tooltip surface to it.
+  await page.waitForFunction(
+    () => getComputedStyle(document.documentElement).getPropertyValue('--card').trim().length > 0,
+  )
   // Let the ECharts instance finish its first layout before probing it.
   await page.waitForTimeout(700)
   const box = await chart.boundingBox()
@@ -114,43 +119,41 @@ test('mobile tables keep tokens, cache and sessions reachable without horizontal
   await expect(hermesRow.getByText('Sessions', { exact: true })).toBeVisible()
 })
 
-test('cost chart uses UTC day ticks on desktop and mobile', async ({ page }, testInfo) => {
+test('cost chart uses UTC fine buckets on desktop and mobile', async ({ page }, testInfo) => {
   await gotoHydrated(page, '/consommation?window=1m&source=all')
-  const chart = page.locator('[data-data-key="bifrost-1m-day"]')
+  const chart = page.locator('[data-data-key="bifrost-1m-hour"]')
   await chart.scrollIntoViewIfNeeded()
-  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-day')
-  // Three cost keys fit as a wrapped legend on mobile; larger grids only use
-  // the table fallback.
+  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-time')
+  // Many Bifrost keys hide the canvas legend and use the accessible table.
   await expect(chart).toHaveAttribute(
     'data-legend-mode',
-    testInfo.project.name.includes('mobile') ? 'plain' : 'scroll',
+    testInfo.project.name.includes('mobile') ? 'hidden' : 'scroll',
   )
 })
 
-test('cost history shows the consumed UTC day in the tooltip and table', async ({
-  page,
-}, testInfo) => {
+test('cost history shows fine UTC buckets in the tooltip and table', async ({ page }, testInfo) => {
   await gotoHydrated(page, '/consommation?window=1m&source=all')
-  const chart = page.locator('[data-data-key="bifrost-1m-day"]')
+  const chart = page.locator('[data-data-key="bifrost-1m-hour"]')
   await chart.scrollIntoViewIfNeeded()
-  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-day')
+  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-time')
 
   await page.getByText('Voir les données sous forme de tableau').first().click()
   const table = page.getByRole('region', { name: /Données du graphique/ }).first()
   await expect(table).toBeVisible()
-  await expect(table.getByRole('columnheader', { name: 'Jour UTC' })).toBeVisible()
+  await expect(table.getByRole('columnheader', { name: 'Heure UTC' })).toBeVisible()
   const firstRow = table.getByRole('row').nth(1)
-  await expect(firstRow).toContainText('31/10')
-  await expect(firstRow.locator('[title]').first()).toHaveAttribute('title', /31\s+oct\..*2026/)
+  await expect(firstRow.locator('[title]').first()).toHaveAttribute(
+    'title',
+    /\d{1,2}\s+\S+\s+2026,\s+\d{2}:\d{2}/,
+  )
 
   if (!testInfo.project.name.includes('mobile')) {
     const tooltip = await hoverChart(page)
     if (!tooltip) return
     await expect(tooltip).toBeVisible()
     const firstLine = (await tooltip.innerText()).split('\n')[0]?.trim() ?? ''
-    // Date only: the UTC day must never be rendered with the Paris time 00:59.
-    expect(firstLine).toMatch(/^\d{1,2}\s+\S+\s+2026$/)
-    expect(firstLine).not.toContain(':')
+    // Fine UTC bucket: date and time, never the Paris offset.
+    expect(firstLine).toMatch(/^\d{1,2}\s+\S+\s+2026,\s+\d{2}:\d{2}$/)
   }
 })
 

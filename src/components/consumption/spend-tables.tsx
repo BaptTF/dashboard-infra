@@ -203,7 +203,7 @@ export function BifrostTable({ report }: { report: SpendReport }) {
           Clés Bifrost
         </span>
       }
-      description="Coût, tokens et cache par clé, fournisseur puis modèle."
+      description="Toutes les clés, hermes-leo et hermes-lea incluses. Les tableaux Hermes détaillent les mêmes coûts par personne, jamais en plus."
     >
       {rows.length === 0 ? (
         <EmptyState

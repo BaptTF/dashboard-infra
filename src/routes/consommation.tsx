@@ -52,6 +52,11 @@ const windowOptions = [
   { value: '3m', label: '3 mois' },
   { value: '6m', label: '6 mois' },
   { value: '1y', label: '1 an' },
+  {
+    value: 'all',
+    label: 'Depuis le début',
+    title: 'Au maximum deux ans, depuis la première donnée',
+  },
 ] as const
 
 const sourceOptions = [
@@ -80,7 +85,7 @@ function ConsumptionPage() {
     <DashboardPage
       eyebrow="Dépenses & tokens"
       title="Consommation"
-      description="Coût, tokens et cache par personne, fournisseur et modèle. Les compteurs Bifrost et les fenêtres Hermes Léo/Léa sont deux sources distinctes, jamais additionnées."
+      description="Coût, tokens et cache par personne, fournisseur et modèle. Les compteurs Bifrost couvrent toutes les clés, y compris Hermes ; les fenêtres Hermes Léo/Léa sont la même consommation vue par personne, jamais ajoutée."
       actions={
         <>
           {report?.mockMode ? (
@@ -156,6 +161,10 @@ function ConsumptionPage() {
             (includesAgent(search.source, 'leo') &&
               (data.leo.length > 0 || data.leoOther != null)) ||
             (includesAgent(search.source, 'lea') && (data.lea.length > 0 || data.leaOther != null))
+          const hermesAllTimeNote =
+            data.window === 'all'
+              ? 'Aucune jauge Hermes « Depuis le début » n’est exportée : la vue par personne reste disponible sur 1 mois, 3 mois, 6 mois ou 1 an. '
+              : ''
 
           return (
             <div className="space-y-5">
@@ -174,7 +183,7 @@ function ConsumptionPage() {
                   {includesAgent(search.source, 'leo') ? (
                     <HermesTable
                       title="Hermes Léo · personnes Telegram"
-                      description="Valeur courante des fenêtres Hermes. Cron, API et TUI sont repliés sur la ligne hors Telegram."
+                      description={`${hermesAllTimeNote}Valeur courante des fenêtres Hermes. Cron, API et TUI sont repliés sur la ligne hors Telegram.`}
                       users={data.leo}
                       other={data.leoOther}
                       otherLabel="Hors Telegram"
@@ -184,7 +193,7 @@ function ConsumptionPage() {
                   {includesAgent(search.source, 'lea') ? (
                     <HermesTable
                       title="Hermes Léa · Telegram et OpenClaw"
-                      description="Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram."
+                      description={`${hermesAllTimeNote}Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram.`}
                       users={data.lea}
                       other={data.leaOther}
                       otherLabel="Hors Telegram"

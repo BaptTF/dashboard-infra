@@ -53,6 +53,24 @@ test('drills from person to provider and model, and keeps period/source in the U
   )
 })
 
+test('shows Hermes keys as Bifrost keys and offers all-time', async ({ page }) => {
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  await expect(page.getByRole('heading', { name: /Clés Bifrost/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Déplier hermes-leo' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Déplier hermes-lea' })).toBeVisible()
+
+  const allTime = page.getByRole('button', { name: 'Depuis le début', exact: true })
+  await allTime.scrollIntoViewIfNeeded()
+  await allTime.click()
+  await expect(page).toHaveURL(/window=all/)
+  await expect(allTime).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('heading', { name: /Courbe de coût Bifrost/ })).toBeVisible()
+  const description = page.getByText(/Points datables, backfill inclus/).first()
+  await expect(description).toBeVisible()
+  await expect(description).toContainText(/totaux identiques à la somme des points/)
+  await expect(page.getByText(/Total courbe :/)).toBeVisible()
+})
+
 test('back and forward resynchronise period and source controls', async ({ page }) => {
   await gotoHydrated(page, '/consommation?window=1m&source=all')
   const oneMonth = page.getByRole('button', { name: 'Mois en cours', exact: true })

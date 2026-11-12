@@ -6,7 +6,7 @@ import { fetchSpendHistory, fetchSpendReport } from '~/lib/spend.server'
 import type { SpendHistory, SpendReport } from '~/lib/types'
 
 const windowInput = z.object({
-  window: z.enum(['1m', '3m', '6m', '1y']).catch('1m'),
+  window: z.enum(['1m', '3m', '6m', '1y', 'all']).catch('1m'),
 })
 
 function noStore() {
