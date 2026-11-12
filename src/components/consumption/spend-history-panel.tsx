@@ -63,7 +63,7 @@ export function SpendHistoryPanel({
           Courbe de coût Bifrost
         </span>
       }
-      description={`Coût Bifrost par ${data?.bucket === 'week' ? 'semaine' : 'jour'}, ${windowLabel}. L’historique démarre à la première mesure du déploiement.`}
+      description={`Coût Bifrost par ${data?.bucket === 'week' ? 'semaine' : 'jour'}, ${windowLabel}, reconstruit depuis les compteurs Bifrost disponibles, backfill inclus.`}
       actions={
         data ? (
           <span className="text-muted-foreground text-[11px]">
@@ -106,7 +106,7 @@ export function SpendHistoryPanel({
       ) : data && data.series.length === 0 ? (
         <EmptyState
           title="Pas encore d’historique"
-          description="Aucune période complète n’a encore été collectée. La courbe démarrera au déploiement, sans historique synthétique."
+          description="Aucun compteur Bifrost exploitable sur cette période. La courbe ne complète jamais les jours manquants."
           icon={LineChart}
         />
       ) : data ? (
@@ -115,7 +115,7 @@ export function SpendHistoryPanel({
             series={chartSeries}
             unit="currency"
             ariaLabel={`Coût Bifrost par ${data.bucket === 'week' ? 'semaine' : 'jour'} pour ${windowLabel}`}
-            description={`Courbe empilée du coût Bifrost par clé et par ${data.bucket === 'week' ? 'semaine' : 'jour'}. Les clés Hermes sont exclues de cette courbe.`}
+            description={`Courbe empilée du coût Bifrost par clé et par ${data.bucket === 'week' ? 'semaine' : 'jour'}, reconstruite depuis les compteurs disponibles, backfill inclus. Les clés Hermes sont exclues.`}
             height={330}
             stacked
             area
@@ -139,6 +139,10 @@ export function SpendHistoryPanel({
             </span>
             <span>Fenêtre depuis le {formatParisDateTime(data.from)}</span>
             <span>Exclues : {data.excludedKeys.join(', ')}</span>
+            <span>
+              Les totaux incluent le backfill ; seuls les coûts avec un historique datable
+              apparaissent dans la courbe.
+            </span>
           </div>
         </div>
       ) : null}

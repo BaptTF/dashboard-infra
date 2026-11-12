@@ -4,11 +4,14 @@ import type {
   LeoProvider,
   LeoUser,
   LeoTotals,
+  MetricPoint,
   MetricSample,
+  MetricSeries,
   ModelSpend,
   PersonSpend,
   ProviderSpend,
   SpendOrigin,
+  SpendPersonDailySeries,
   SpendReport,
   SpendWindow,
   Totals,
@@ -50,33 +53,147 @@ export function buildSpendQueries(id: SpendWindow, range: string): string[] {
 }
 
 /**
- * Range query for the cost curve. A 1d/7d increase evaluated at the matching
- * step gives non-overlapping buckets, so days or weeks can be summed without
- * overlap. Hermes agent keys are excluded to avoid counting their window
- * gauges as Bifrost counters.
+ * Range query for the cost curve. The reference window is wide enough to find
+ * a predecessor for every datable series, and the query always runs at one
+ * point per day. Grouping keeps the model/backfill identity: summing raw
+ * counters by key first would turn a newly backfilled model into a fake spike.
  */
-export function buildSpendHistoryQuery(bucket: 'day' | 'week'): string {
-  const range = bucket === 'day' ? '1d' : '7d'
-  return `sum by (virtual_key_name) (${DEDUPE}(increase(bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}[${range}])))`
+export function buildSpendHistoryQuery(_bucket?: 'day' | 'week'): string {
+  return `sum by (virtual_key_name, provider, model, backfill) (${DEDUPE}(last_over_time(bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}[1d])))`
 }
+
+/** Evaluations land at 00:02 UTC, just after the 23:59 UTC backfill sample. */
+export const HISTORY_EVALUATION_SECONDS = 120
+export const HISTORY_REFERENCE_DAYS = 400
+const DAY_SECONDS = 86_400
 
 export interface SpendHistoryPlan {
   from: Date
+  to: Date
+  /** Start of the wide daily reference query, aligned on 00:02 UTC. */
   queryFrom: Date
+  queryStepSeconds: number
+  /** Display step: one day for 1m/3m/6m, one week for 1y. */
   stepSeconds: number
   bucket: 'day' | 'week'
+}
+
+function referenceWindowStart(now: Date): Date {
+  const start =
+    Math.floor((now.getTime() / 1000 - HISTORY_REFERENCE_DAYS * DAY_SECONDS) / DAY_SECONDS) *
+      DAY_SECONDS +
+    HISTORY_EVALUATION_SECONDS
+  return new Date(start * 1000)
 }
 
 export function spendHistoryPlan(id: SpendWindow, now: Date): SpendHistoryPlan {
   const bounds = windowBounds(now, id)
   const bucket: 'day' | 'week' = id === '1y' ? 'week' : 'day'
-  const stepSeconds = bucket === 'day' ? 86400 : 7 * 86400
+  const stepSeconds = bucket === 'day' ? DAY_SECONDS : 7 * DAY_SECONDS
   return {
     from: bounds.from,
-    queryFrom: new Date(bounds.from.getTime() + stepSeconds * 1000),
+    to: now,
+    queryFrom: referenceWindowStart(now),
+    queryStepSeconds: DAY_SECONDS,
     stepSeconds,
     bucket,
   }
+}
+
+/**
+ * An evaluation at 00:02 UTC reads the counter as it stood at 23:59 UTC for
+ * the day that just ended. Shift by three minutes so the chart labels the
+ * consumed day, never the new one (00:02 - 3 min = 23:59).
+ */
+export function spendHistoryPointTimestamp(evaluationSeconds: number): number {
+  return evaluationSeconds - 180
+}
+
+function weekStart(seconds: number): number {
+  const day = Math.floor(seconds / DAY_SECONDS) * DAY_SECONDS
+  const weekday = new Date(day * 1000).getUTCDay()
+  return day - ((weekday + 6) % 7) * DAY_SECONDS
+}
+
+/**
+ * Rebuilds datable deltas from cumulative series. A series is identified by
+ * key/provider/model/backfill: its first sample has no predecessor and is
+ * ignored, so a one-sample backfill is never charged to the day it appears.
+ * Decreases are gateway restarts (delta = current value). Deltas are then
+ * summed by key and UTC day, and finally bucketed by week for the 1y view.
+ */
+export function spendHistorySeries(
+  rows: MetricSeries[],
+  plan: SpendHistoryPlan,
+): SpendPersonDailySeries[] {
+  const fromSeconds = plan.from.getTime() / 1000
+  const toSeconds = plan.to.getTime() / 1000
+  const byKey = new Map<string, Map<number, number>>()
+
+  for (const row of rows) {
+    const virtualKey = (row.labels.virtual_key_name ?? '').trim()
+    if (!virtualKey || virtualKey === 'hermes-lea' || virtualKey === 'hermes-leo') continue
+    const points = row.points
+      .filter(
+        (point) =>
+          Number.isFinite(point.timestamp) && Number.isFinite(point.value) && point.value >= 0,
+      )
+      .sort((a, b) => a.timestamp - b.timestamp)
+    if (points.length < 2) continue
+
+    let previous: number | null = null
+    for (const point of points) {
+      if (previous == null) {
+        // No predecessor: the sample only defines the series baseline.
+        previous = point.value
+        continue
+      }
+      let value = point.value - previous
+      if (value < 0) value = point.value
+      previous = point.value
+      const timestamp = spendHistoryPointTimestamp(point.timestamp)
+      if (timestamp < fromSeconds || timestamp > toSeconds) continue
+      let days = byKey.get(virtualKey)
+      if (!days) {
+        days = new Map()
+        byKey.set(virtualKey, days)
+      }
+      days.set(timestamp, (days.get(timestamp) ?? 0) + value)
+    }
+  }
+
+  const series: SpendPersonDailySeries[] = []
+  for (const [virtualKey, days] of byKey) {
+    const points: MetricPoint[] = []
+    if (plan.bucket === 'day') {
+      for (const [timestamp, value] of [...days].sort((a, b) => a[0] - b[0])) {
+        points.push({ timestamp, value })
+      }
+    } else {
+      const weeks = new Map<number, { value: number; timestamp: number }>()
+      for (const [timestamp, value] of [...days].sort((a, b) => a[0] - b[0])) {
+        const week = weekStart(timestamp)
+        const bucket = weeks.get(week)
+        if (bucket) {
+          bucket.value += value
+          bucket.timestamp = Math.max(bucket.timestamp, timestamp)
+        } else {
+          weeks.set(week, { value, timestamp })
+        }
+      }
+      for (const [, bucket] of [...weeks].sort((a, b) => a[0] - b[0])) {
+        points.push({ timestamp: bucket.timestamp, value: bucket.value })
+      }
+    }
+    if (points.length > 0) series.push({ virtualKey, points })
+  }
+
+  series.sort((a, b) => {
+    const totalA = a.points.reduce((sum, point) => sum + point.value, 0)
+    const totalB = b.points.reduce((sum, point) => sum + point.value, 0)
+    return totalB - totalA || a.virtualKey.localeCompare(b.virtualKey, 'fr')
+  })
+  return series
 }
 
 function zero(totals: Totals): boolean {

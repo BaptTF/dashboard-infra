@@ -1095,27 +1095,114 @@ function quotaHistory(model: MockModel, params: URLSearchParams, query: string):
   return { status: 200, body: matrix(rows) }
 }
 
-function spendHistory(model: MockModel, params: URLSearchParams, query: string): MockResponse {
+const HISTORY_BACKFILL_DAYS = 120
+const HISTORY_RESET_DAYS = 10
+const HISTORY_PAUSE_START_DAYS = 9
+const HISTORY_PAUSE_END_DAYS = 5
+
+/**
+ * Deterministic daily increment. Summing these values gives the cumulative
+ * counter that the real Bifrost/backfill series expose, so the curve tests the
+ * same delta reconstruction as production instead of pre-computed buckets.
+ */
+function historyIncrement(person: FixturePerson, day: number): number {
+  const variation = 0.6 + (hash(`${person.virtualKey}:${day}`) % 800) / 1000
+  return (person.cost / 30) * variation
+}
+
+function historyCumulative(
+  model: MockModel,
+  person: FixturePerson,
+  timestamp: number,
+): number | null {
+  const now = model.now.getTime() / 1000
+  const historyStartDay = Math.floor((now - HISTORY_BACKFILL_DAYS * DAY) / DAY)
+  // A 00:02 evaluation reads the counter as it stood at 23:59 for the day
+  // that just ended. This mirrors the backfill samples used in production.
+  const lastDay = Math.floor((timestamp - 180) / DAY)
+  if (lastDay < historyStartDay) return null
+
+  let firstDay = historyStartDay
+  if (person.virtualKey === 'atlas') {
+    const resetDay = Math.floor((now - HISTORY_RESET_DAYS * DAY) / DAY)
+    if (lastDay >= resetDay) firstDay = Math.max(firstDay, resetDay)
+  }
+  if (person.virtualKey === 'open-code-cli-poste-de-travail') {
+    const pauseStart = now - HISTORY_PAUSE_START_DAYS * DAY
+    const pauseEnd = now - HISTORY_PAUSE_END_DAYS * DAY
+    if (timestamp >= pauseStart && timestamp < pauseEnd) return null
+  }
+
+  let total = 0
+  for (let day = firstDay; day <= lastDay; day += 1) {
+    total += historyIncrement(person, day)
+  }
+  return total
+}
+
+function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
   const start = Number(params.get('start'))
   const end = Number(params.get('end'))
   const step = Math.max(3600, Number(params.get('step')) || DAY)
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
     return { status: 200, body: matrix([]) }
   }
-  const bucketDays = query.includes('[7d]') ? 7 : 1
-  const deployment = model.deploymentAt.getTime() / 1000
-  const first = Math.max(start, Math.ceil((deployment - start) / step) * step + start)
-  if (first > end) return { status: 200, body: matrix([]) }
 
-  const rows = model.people.map((person) => {
+  const rows: { metric: Record<string, string>; values: [number, string][] }[] = []
+  for (const person of model.people) {
     const values: [number, string][] = []
-    for (let timestamp = first; timestamp <= end; timestamp += step) {
-      const daily = (person.cost / 30) * bucketDays
-      const variation = 0.8 + (hash(`${person.virtualKey}${timestamp}`) % 400) / 1000
-      values.push([timestamp, (daily * variation).toFixed(4)])
+    for (let timestamp = start; timestamp <= end; timestamp += step) {
+      const value = historyCumulative(model, person, timestamp)
+      if (value == null) continue
+      values.push([timestamp, value.toFixed(6)])
     }
-    return { metric: { virtual_key_name: person.virtualKey }, values }
+    if (values.length > 0) {
+      rows.push({
+        metric: {
+          virtual_key_name: person.virtualKey,
+          provider: person.provider,
+          model: person.model,
+        },
+        values,
+      })
+    }
+  }
+
+  // A new model appears late with a high cumulative backfill value: its first
+  // sample is a baseline, never a spike on the day it lands.
+  const newModel = model.people.find((person) => person.virtualKey === 'atlas')
+  if (newModel) {
+    const values: [number, string][] = []
+    for (let timestamp = start; timestamp <= end; timestamp += step) {
+      const daysAgo = (model.now.getTime() / 1000 - timestamp) / DAY
+      if (daysAgo < 0 || daysAgo > 2.5) continue
+      values.push([timestamp, (100 + (2.5 - daysAgo) * 2).toFixed(6)])
+    }
+    if (values.length > 0) {
+      rows.push({
+        metric: {
+          virtual_key_name: newModel.virtualKey,
+          provider: 'opencode-go',
+          model: 'backfill-new-model',
+          backfill: 'opencode',
+        },
+        values,
+      })
+    }
+  }
+
+  // One datapoint only: not datable, so the curve must ignore this key.
+  const singleTimestamp = Math.floor((model.now.getTime() / 1000 - DAY) / step) * step
+  rows.push({
+    metric: {
+      virtual_key_name: 'atelier-backfill',
+      provider: 'opencode-go',
+      model: 'single-sample',
+      backfill: 'opencode',
+    },
+    values: [[singleTimestamp, '500']],
   })
+
   return { status: 200, body: matrix(rows) }
 }
 
@@ -1136,8 +1223,8 @@ export function handlePrometheusRequest(
     const query = params.get('query') ?? ''
     if (model.scenario === 'empty') return { status: 200, body: matrix([]) }
     if (query.includes('ai_usage_quota_used_ratio')) return quotaHistory(model, params, query)
-    if (query.includes('bifrost_cost_total') && query.includes('increase')) {
-      return spendHistory(model, params, query)
+    if (query.includes('bifrost_cost_total')) {
+      return spendHistory(model, params)
     }
     return { status: 200, body: matrix([]) }
   }

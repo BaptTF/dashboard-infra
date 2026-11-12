@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildSpendHistoryQuery, spendHistoryPlan, spendHistorySeries } from '~/lib/spend'
 import {
   MOCK_SCENARIOS,
   createMockModel,
@@ -135,6 +136,53 @@ describe('deterministic Prometheus mock', () => {
     )
     expect(short).toHaveLength(4)
     expect(Number(long[0]?.value[1])).toBeGreaterThan(Number(short[0]?.value[1]))
+  })
+
+  it('serves cumulative Bifrost history that yields several curve points', () => {
+    const plan = spendHistoryPlan('1m', now)
+    const response = handlePrometheusRequest(
+      '/api/v1/query_range',
+      new URLSearchParams({
+        query: buildSpendHistoryQuery(plan.bucket),
+        start: String(plan.queryFrom.getTime() / 1000),
+        end: String(now.getTime() / 1000),
+        step: String(plan.queryStepSeconds),
+      }),
+      'nominal',
+      now,
+    )
+    const rows = matrix(response)
+    expect(rows).toHaveLength(6)
+    const series = spendHistorySeries(
+      rows.map((row) => ({
+        labels: row.metric,
+        points: row.values.map(([timestamp, value]) => ({
+          timestamp,
+          value: Number(value),
+        })),
+      })),
+      plan,
+    )
+    expect(series).toHaveLength(4)
+    // 1m must not collapse to the two points of the old increase() query.
+    for (const entry of series) expect(entry.points.length).toBeGreaterThan(2)
+    expect(series.some((entry) => entry.points.some((point) => point.value > 0))).toBe(true)
+
+    // The late high-cumulative model and the single-sample backfill must not
+    // create a spike or an invented line.
+    expect(series.some((entry) => entry.virtualKey === 'atelier-backfill')).toBe(false)
+    const largest = Math.max(
+      ...series.flatMap((entry) => entry.points.map((point) => point.value)),
+      Number.NEGATIVE_INFINITY,
+    )
+    expect(largest).toBeLessThan(100)
+
+    const atlas = series.find((entry) => entry.virtualKey === 'atlas')
+    expect(atlas?.points.some((point) => point.value > 0)).toBe(true)
+    const paused = series.find((entry) => entry.virtualKey === 'open-code-cli-poste-de-travail')
+    expect(paused?.points.length).toBeLessThan(
+      Math.max(...series.map((entry) => entry.points.length)),
+    )
   })
 
   it('returns Hermes window gauges and Bifrost-shaped agent rows', () => {

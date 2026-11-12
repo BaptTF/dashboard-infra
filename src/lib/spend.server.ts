@@ -5,6 +5,7 @@ import {
   makeErrorReport,
   makeReport,
   spendHistoryPlan,
+  spendHistorySeries,
 } from './spend'
 import type { PrometheusConfig, PrometheusClient } from './prometheus.server'
 import type {
@@ -114,24 +115,15 @@ export async function fetchSpendHistory(
       buildSpendHistoryQuery(plan.bucket),
       Math.floor(plan.queryFrom.getTime() / 1000),
       Math.floor(now.getTime() / 1000),
-      plan.stepSeconds,
+      plan.queryStepSeconds,
     )
+    const series: SpendPersonDailySeries[] = spendHistorySeries(rows, plan)
     let first = Number.POSITIVE_INFINITY
-    const series: SpendPersonDailySeries[] = []
-    for (const row of rows) {
-      const virtualKey = (row.labels.virtual_key_name ?? '').trim()
-      if (!virtualKey || base.excludedKeys.includes(virtualKey)) continue
-      const points = row.points.filter((point) => point.value >= 0)
-      if (points.length === 0) continue
-      const firstPoint = points[0]
-      if (firstPoint && firstPoint.timestamp < first) first = firstPoint.timestamp
-      series.push({ virtualKey, points })
+    for (const entry of series) {
+      for (const point of entry.points) {
+        if (point.timestamp < first) first = point.timestamp
+      }
     }
-    series.sort((a, b) => {
-      const totalA = a.points.reduce((sum, point) => sum + point.value, 0)
-      const totalB = b.points.reduce((sum, point) => sum + point.value, 0)
-      return totalB - totalA || a.virtualKey.localeCompare(b.virtualKey, 'fr')
-    })
     return {
       ...base,
       series,

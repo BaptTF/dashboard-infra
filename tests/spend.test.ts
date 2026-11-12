@@ -4,9 +4,13 @@ import {
   bifrostFromHermes,
   buildSpendHistoryQuery,
   buildSpendQueries,
+  HISTORY_REFERENCE_DAYS,
   makeReport,
+  spendHistoryPlan,
+  spendHistoryPointTimestamp,
+  spendHistorySeries,
 } from '~/lib/spend'
-import type { MetricSample } from '~/lib/types'
+import type { MetricSample, MetricSeries } from '~/lib/types'
 import { sample } from './helpers'
 
 const labels = {
@@ -278,10 +282,188 @@ describe('spend PromQL', () => {
     expect(queries.every((query) => !query.includes('sum(') || query.includes('sum by'))).toBe(true)
   })
 
-  it('builds a non-overlapping bucket query for history', () => {
-    expect(buildSpendHistoryQuery('day')).toContain('increase(bifrost_cost_total')
-    expect(buildSpendHistoryQuery('day')).toContain('[1d]')
-    expect(buildSpendHistoryQuery('week')).toContain('[7d]')
-    expect(buildSpendHistoryQuery('day')).toContain('hermes-lea|hermes-leo')
+  it('keeps model/backfill identity and reads daily cumulative points', () => {
+    const query = buildSpendHistoryQuery('day')
+    expect(query).not.toContain('increase')
+    expect(query).toContain('sum by (virtual_key_name, provider, model, backfill)')
+    expect(query).toContain('bifrost_cost_total{virtual_key_name!~"hermes-lea|hermes-leo"}')
+    expect(query).toContain('last_over_time')
+    expect(query).toContain('[1d]')
+    expect(query).toContain('max without')
+    // Every display period uses the same daily reference query.
+    expect(buildSpendHistoryQuery('week')).toBe(query)
+  })
+})
+
+describe('spend history reconstruction', () => {
+  const now = new Date('2026-11-12T20:00:00Z')
+  const plan = spendHistoryPlan('1m', now)
+
+  function evalAt(iso: string): number {
+    return Date.parse(iso) / 1000
+  }
+
+  function row(labels: Record<string, string>, points: [string, number][]): MetricSeries {
+    return {
+      labels,
+      points: points.map(([iso, value]) => ({ timestamp: evalAt(iso), value })),
+    }
+  }
+
+  it('queries a 400-day daily reference window aligned on 00:02 UTC', () => {
+    const expected =
+      Math.floor((now.getTime() / 1000 - HISTORY_REFERENCE_DAYS * 86_400) / 86_400) * 86_400 + 120
+    expect(plan.queryFrom.getTime() / 1000).toBe(expected)
+    expect(plan.queryFrom.getUTCHours()).toBe(0)
+    expect(plan.queryFrom.getUTCMinutes()).toBe(2)
+    expect(plan.queryStepSeconds).toBe(86_400)
+    expect(plan.stepSeconds).toBe(86_400)
+    expect(plan.from.toISOString()).toBe('2026-10-31T23:00:00.000Z')
+
+    const week = spendHistoryPlan('1y', now)
+    expect(week.bucket).toBe('week')
+    expect(week.queryStepSeconds).toBe(86_400)
+    expect(week.stepSeconds).toBe(7 * 86_400)
+    expect(week.queryFrom.getTime()).toBe(plan.queryFrom.getTime())
+  })
+
+  it('labels an evaluation with the consumed day at 23:59 UTC', () => {
+    const evaluation = Date.UTC(2026, 10, 1, 0, 2) / 1000
+    expect(spendHistoryPointTimestamp(evaluation) * 1000).toBe(Date.UTC(2026, 9, 31, 23, 59))
+  })
+
+  it('does not spike when a new model series appears with a high cumulative value', () => {
+    const rows: MetricSeries[] = [
+      row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'old', backfill: '' }, [
+        ['2026-11-01T00:02:00Z', 1],
+        ['2026-11-02T00:02:00Z', 3],
+      ]),
+      row(
+        {
+          virtual_key_name: 'tailscale-baptiste',
+          provider: 'p',
+          model: 'new',
+          backfill: 'opencode',
+        },
+        [
+          ['2026-11-02T00:02:00Z', 100],
+          ['2026-11-03T00:02:00Z', 105],
+        ],
+      ),
+    ]
+    const series = spendHistorySeries(rows, plan)
+    expect(series).toHaveLength(1)
+    expect(series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 2 },
+      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 5 },
+    ])
+  })
+
+  it('omits a series with a single sample instead of charging its cumulative value', () => {
+    const series = spendHistorySeries(
+      [
+        row({ virtual_key_name: 'vulcain', provider: 'p', model: 'm', backfill: 'opencode' }, [
+          ['2026-11-10T00:02:00Z', 500],
+        ]),
+      ],
+      plan,
+    )
+    expect(series).toEqual([])
+  })
+
+  it('computes multi-day deltas and treats a decrease as a reset', () => {
+    const series = spendHistorySeries(
+      [
+        row({ virtual_key_name: 'tailscale-emma', provider: 'p', model: 'm', backfill: '' }, [
+          ['2026-11-01T00:02:00Z', 0],
+          ['2026-11-02T00:02:00Z', 10],
+          ['2026-11-03T00:02:00Z', 15],
+          ['2026-11-04T00:02:00Z', 4],
+          ['2026-11-05T00:02:00Z', 9],
+        ]),
+      ],
+      plan,
+    )
+    expect(series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 10 },
+      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 5 },
+      { timestamp: Date.UTC(2026, 10, 3, 23, 59) / 1000, value: 4 },
+      { timestamp: Date.UTC(2026, 10, 4, 23, 59) / 1000, value: 5 },
+    ])
+  })
+
+  it('combines backfill and live series without charging the live first sample', () => {
+    const series = spendHistorySeries(
+      [
+        row(
+          { virtual_key_name: 'tailscale-noe', provider: 'p', model: 'm', backfill: 'opencode' },
+          [
+            ['2026-11-01T00:02:00Z', 0],
+            ['2026-11-02T00:02:00Z', 10],
+          ],
+        ),
+        row({ virtual_key_name: 'tailscale-noe', provider: 'p', model: 'm' }, [
+          ['2026-11-03T00:02:00Z', 100],
+          ['2026-11-04T00:02:00Z', 107],
+        ]),
+      ],
+      plan,
+    )
+    expect(series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 10 },
+      { timestamp: Date.UTC(2026, 10, 3, 23, 59) / 1000, value: 7 },
+    ])
+  })
+
+  it('drops datable deltas whose consumed day is before the displayed period', () => {
+    const series = spendHistorySeries(
+      [
+        row({ virtual_key_name: 'tailscale-emma', provider: 'p', model: 'm', backfill: '' }, [
+          ['2026-10-30T00:02:00Z', 0],
+          ['2026-10-31T00:02:00Z', 50],
+          ['2026-11-01T00:02:00Z', 60],
+        ]),
+      ],
+      plan,
+    )
+    expect(series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 9, 31, 23, 59) / 1000, value: 10 },
+    ])
+  })
+
+  it('aggregates the 1y view by UTC week', () => {
+    const week = spendHistoryPlan('1y', now)
+    const series = spendHistorySeries(
+      [
+        row({ virtual_key_name: 'tailscale-baptiste', provider: 'p', model: 'm', backfill: '' }, [
+          ['2026-01-05T00:02:00Z', 0],
+          ['2026-01-06T00:02:00Z', 5],
+          ['2026-01-07T00:02:00Z', 12],
+          ['2026-01-13T00:02:00Z', 20],
+        ]),
+      ],
+      week,
+    )
+    expect(series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 0, 6, 23, 59) / 1000, value: 12 },
+      { timestamp: Date.UTC(2026, 0, 12, 23, 59) / 1000, value: 8 },
+    ])
+  })
+
+  it('excludes Hermes keys from the history curve', () => {
+    const series = spendHistorySeries(
+      [
+        row({ virtual_key_name: 'hermes-leo', provider: 'p', model: 'm', backfill: '' }, [
+          ['2026-11-01T00:02:00Z', 1],
+          ['2026-11-02T00:02:00Z', 2],
+        ]),
+        row({ virtual_key_name: 'hermes-lea', provider: 'p', model: 'm', backfill: '' }, [
+          ['2026-11-01T00:02:00Z', 1],
+          ['2026-11-02T00:02:00Z', 2],
+        ]),
+      ],
+      plan,
+    )
+    expect(series).toEqual([])
   })
 })
