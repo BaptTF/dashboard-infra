@@ -11,9 +11,16 @@ import type {
 
 export type SpendSource = 'all' | 'bifrost' | 'leo' | 'lea'
 
+/** The Bifrost key behind a person filter, when there is one. */
+export function selectedBifrostKey(source: SpendSource): 'hermes-leo' | 'hermes-lea' | null {
+  if (source === 'leo') return 'hermes-leo'
+  if (source === 'lea') return 'hermes-lea'
+  return null
+}
+
 /** One source filter drives cards, tables and the curve together. */
 export function includesBifrost(source: SpendSource): boolean {
-  return source === 'all' || source === 'bifrost'
+  return source === 'all' || source === 'bifrost' || source === 'leo' || source === 'lea'
 }
 
 export function includesAgent(source: SpendSource, agent: 'leo' | 'lea'): boolean {

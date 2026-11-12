@@ -192,8 +192,14 @@ const hermesColumns: DataTableColumn<HermesViewRow>[] = [
   },
 ]
 
-export function BifrostTable({ report }: { report: SpendReport }) {
-  const rows = buildSpendRows(report.people, 'bifrost')
+export function BifrostTable({ report, onlyKeys }: { report: SpendReport; onlyKeys?: string[] }) {
+  const rows = buildSpendRows(report.people, 'bifrost').filter(
+    (row) => !onlyKeys || onlyKeys.includes(row.label),
+  )
+  const scope =
+    onlyKeys && onlyKeys.length === 1
+      ? `Vue limitée à la clé ${onlyKeys[0]}. `
+      : 'Toutes les clés, hermes-leo et hermes-lea incluses. '
 
   return (
     <Panel
@@ -203,7 +209,7 @@ export function BifrostTable({ report }: { report: SpendReport }) {
           Clés Bifrost
         </span>
       }
-      description="Toutes les clés, hermes-leo et hermes-lea incluses. Les tableaux Hermes détaillent les mêmes coûts par personne, jamais en plus."
+      description={`${scope}La vue Hermes par personne est une source distincte, jamais ajoutée.`}
     >
       {rows.length === 0 ? (
         <EmptyState

@@ -378,15 +378,34 @@ describe('Bifrost cost reconstruction', () => {
     const result = reconstructBifrostCost(
       [
         row({ virtual_key_name: 'vulcain', provider: 'p', model: 'm', backfill: 'opencode' }, [
+          ['2026-11-02T00:00:00Z', 5],
+          ['2026-11-03T00:00:00Z', 8],
+        ]),
+      ],
+      plan,
+    )
+    // Backfill stays daily: the consumed days are 1 and 2 November, labelled
+    // at 23:59 UTC, not spread over the 1h live bucket.
+    expect(result.series[0]?.points).toEqual([
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 5 },
+      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 3 },
+    ])
+  })
+
+  it('excludes a backfill day that starts before the selected period', () => {
+    const result = reconstructBifrostCost(
+      [
+        row({ virtual_key_name: 'vulcain', provider: 'p', model: 'm', backfill: 'opencode' }, [
           ['2026-11-01T00:00:00Z', 5],
           ['2026-11-02T00:00:00Z', 8],
         ]),
       ],
       plan,
     )
+    // 1 November 00:00 contains 31 October's consumed day, which starts before
+    // the Paris month boundary. Only the 1 November day remains.
     expect(result.series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 9, 31, 23) / 1000, value: 5 },
-      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 3 },
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 3 },
     ])
   })
 
@@ -422,9 +441,10 @@ describe('Bifrost cost reconstruction', () => {
       ],
       plan,
     )
+    // The 31 October day is before the Paris month start; the baseline still
+    // seeds the 1 November delta correctly.
     expect(result.series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 9, 31, 23) / 1000, value: 2 },
-      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 3 },
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 3 },
     ])
   })
 
@@ -474,9 +494,9 @@ describe('Bifrost cost reconstruction', () => {
     expect(result.series).toHaveLength(1)
     expect(result.series[0]?.points).toEqual([
       { timestamp: Date.UTC(2026, 10, 1, 0) / 1000, value: 1 },
-      { timestamp: Date.UTC(2026, 10, 1, 23) / 1000, value: 2.5 },
+      { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 2.5 },
       { timestamp: Date.UTC(2026, 10, 2, 0) / 1000, value: 2 },
-      { timestamp: Date.UTC(2026, 10, 2, 23) / 1000, value: 2.8 - 2.5 },
+      { timestamp: Date.UTC(2026, 10, 2, 23, 59) / 1000, value: 2.8 - 2.5 },
     ])
   })
 
@@ -496,7 +516,7 @@ describe('Bifrost cost reconstruction', () => {
       plan,
     )
     expect(result.series[0]?.points).toEqual([
-      { timestamp: Date.UTC(2026, 10, 9, 23) / 1000, value: 0.75 },
+      { timestamp: Date.UTC(2026, 10, 9, 23, 59) / 1000, value: 0.75 },
     ])
   })
 
@@ -504,12 +524,12 @@ describe('Bifrost cost reconstruction', () => {
     const result = reconstructBifrostCost(
       [
         row({ virtual_key_name: 'hermes-leo', provider: 'p', model: 'm', backfill: 'hermes' }, [
-          ['2026-11-01T00:00:00Z', 1],
-          ['2026-11-02T00:00:00Z', 2],
+          ['2026-11-02T00:00:00Z', 1],
+          ['2026-11-03T00:00:00Z', 2],
         ]),
         row({ virtual_key_name: 'hermes-lea', provider: 'p', model: 'm', backfill: 'hermes' }, [
-          ['2026-11-01T00:00:00Z', 3],
-          ['2026-11-02T00:00:00Z', 4],
+          ['2026-11-02T00:00:00Z', 3],
+          ['2026-11-03T00:00:00Z', 4],
         ]),
       ],
       plan,

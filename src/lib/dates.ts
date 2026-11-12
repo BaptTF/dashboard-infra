@@ -193,7 +193,7 @@ export function windowBounds(now: Date, id: SpendWindow): WindowBounds {
           ? '1 an'
           : id === 'all'
             ? 'Depuis le début'
-            : '1 mois'
+            : 'Mois en cours'
   const from =
     id === 'all'
       ? new Date(now.getTime() - 2 * 365.25 * 24 * 60 * 60 * 1000)
@@ -256,7 +256,7 @@ export function spendWindowLabel(window: SpendWindow): string {
         ? '1 an'
         : window === 'all'
           ? 'Depuis le début'
-          : '1 mois'
+          : 'Mois en cours'
 }
 
 export function formatParisDate(value: Date | number | string | null | undefined): string {

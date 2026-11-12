@@ -15,7 +15,12 @@ import { SourceNotes } from '~/components/consumption/source-notes'
 import { UpdateIndicator } from '~/components/update-indicator'
 import { normalizeSpendWindow, spendWindowLabel } from '~/lib/dates'
 import { consumptionHistoryQueryOptions, consumptionReportQueryOptions } from '~/lib/queries'
-import { includesAgent, includesBifrost, type SpendSource } from '~/lib/spend-view'
+import {
+  includesAgent,
+  includesBifrost,
+  selectedBifrostKey,
+  type SpendSource,
+} from '~/lib/spend-view'
 import type { SpendWindow } from '~/lib/types'
 
 interface ConsumptionSearch {
@@ -62,8 +67,8 @@ const windowOptions = [
 const sourceOptions = [
   { value: 'all', label: 'Tout' },
   { value: 'bifrost', label: 'Bifrost' },
-  { value: 'leo', label: 'Léo' },
-  { value: 'lea', label: 'Léa' },
+  { value: 'leo', label: 'Léo', title: 'Clé Bifrost hermes-leo et détail Hermes par personne' },
+  { value: 'lea', label: 'Léa', title: 'Clé Bifrost hermes-lea et détail Hermes par personne' },
 ] as const
 
 function ConsumptionPage() {
@@ -85,7 +90,7 @@ function ConsumptionPage() {
     <DashboardPage
       eyebrow="Dépenses & tokens"
       title="Consommation"
-      description="Coût, tokens et cache par personne, fournisseur et modèle. Les compteurs Bifrost couvrent toutes les clés, y compris Hermes ; les fenêtres Hermes Léo/Léa sont la même consommation vue par personne, jamais ajoutée."
+      description="Coût, tokens et cache par personne, fournisseur et modèle. Les compteurs Bifrost couvrent toutes les clés, y compris Hermes ; la vue Hermes par personne est une source distincte, jamais ajoutée."
       actions={
         <>
           {report?.mockMode ? (
@@ -155,16 +160,18 @@ function ConsumptionPage() {
             )
           }
 
+          const selectedKey = selectedBifrostKey(search.source)
+          const bifrostHasData = data.people.some(
+            (person) =>
+              person.origin === 'bifrost' &&
+              (selectedKey == null || person.virtualKey === selectedKey),
+          )
           const filteredHasData =
-            (includesBifrost(search.source) &&
-              data.people.some((person) => person.origin === 'bifrost')) ||
+            (includesBifrost(search.source) && bifrostHasData) ||
             (includesAgent(search.source, 'leo') &&
               (data.leo.length > 0 || data.leoOther != null)) ||
             (includesAgent(search.source, 'lea') && (data.lea.length > 0 || data.leaOther != null))
-          const hermesAllTimeNote =
-            data.window === 'all'
-              ? 'Aucune jauge Hermes « Depuis le début » n’est exportée : la vue par personne reste disponible sur 1 mois, 3 mois, 6 mois ou 1 an. '
-              : ''
+          const hermesAllTime = data.window === 'all'
 
           return (
             <div className="space-y-5">
@@ -179,26 +186,43 @@ function ConsumptionPage() {
 
               {filteredHasData ? (
                 <>
-                  {includesBifrost(search.source) ? <BifrostTable report={data} /> : null}
-                  {includesAgent(search.source, 'leo') ? (
+                  {includesBifrost(search.source) ? (
+                    <BifrostTable
+                      report={data}
+                      onlyKeys={selectedKey ? [selectedKey] : undefined}
+                    />
+                  ) : null}
+                  {!hermesAllTime && includesAgent(search.source, 'leo') ? (
                     <HermesTable
                       title="Hermes Léo · personnes Telegram"
-                      description={`${hermesAllTimeNote}Valeur courante des fenêtres Hermes. Cron, API et TUI sont repliés sur la ligne hors Telegram.`}
+                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer) ; jamais ajoutée. Cron, API et TUI sont repliés sur la ligne hors Telegram."
                       users={data.leo}
                       other={data.leoOther}
                       otherLabel="Hors Telegram"
                       agent="leo"
                     />
                   ) : null}
-                  {includesAgent(search.source, 'lea') ? (
+                  {!hermesAllTime && includesAgent(search.source, 'lea') ? (
                     <HermesTable
                       title="Hermes Léa · Telegram et OpenClaw"
-                      description={`${hermesAllTimeNote}Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram.`}
+                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer) ; jamais ajoutée. Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram."
                       users={data.lea}
                       other={data.leaOther}
                       otherLabel="Hors Telegram"
                       agent="lea"
                     />
+                  ) : null}
+                  {hermesAllTime &&
+                  (includesAgent(search.source, 'leo') || includesAgent(search.source, 'lea')) ? (
+                    <StatusBanner
+                      tone="info"
+                      title="Vue Hermes par personne indisponible pour Depuis le début"
+                    >
+                      Les jauges Hermes ne sont pas exportées sur cette période. Les totaux Bifrost{' '}
+                      {selectedKey ? `de la clé ${selectedKey}` : 'des clés Hermes'} restent
+                      affichés ci-dessus ; choisissez Mois en cours à 1 an pour le détail par
+                      personne.
+                    </StatusBanner>
                   ) : null}
                 </>
               ) : (
@@ -206,7 +230,7 @@ function ConsumptionPage() {
                   title="Aucune consommation pour cette source"
                   description={
                     search.source === 'leo' || search.source === 'lea'
-                      ? 'Aucune jauge Hermes ne porte de valeur pour cette personne sur la période.'
+                      ? `Aucun compteur Bifrost ni aucune jauge Hermes ne porte de valeur pour ${selectedKey} sur la période.`
                       : 'Aucun compteur Bifrost ne porte de valeur sur la période.'
                   }
                   icon={Database}
@@ -214,7 +238,12 @@ function ConsumptionPage() {
               )}
 
               {includesBifrost(search.source) ? (
-                <SpendHistoryPanel query={historyQuery} windowLabel={data.windowLabel} />
+                <SpendHistoryPanel
+                  query={historyQuery}
+                  windowLabel={data.windowLabel}
+                  onlyKeys={selectedKey ? [selectedKey] : undefined}
+                  filterLabel={selectedKey ?? undefined}
+                />
               ) : null}
 
               <SourceNotes />

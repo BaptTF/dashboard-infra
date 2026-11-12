@@ -95,7 +95,7 @@ function RootComponent() {
               </div>
               <footer className="text-muted-foreground border-t px-4 py-4 text-[11px] sm:px-6">
                 <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center justify-between gap-2">
-                  <p>Prometheus en lecture seule · heures Europe/Paris</p>
+                  <p>Prometheus en lecture seule · Paris, courbe Bifrost en UTC</p>
                   <p className="tnum">Pilotage IA · dashboard-infra</p>
                 </div>
               </footer>

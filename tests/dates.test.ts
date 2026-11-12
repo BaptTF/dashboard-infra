@@ -32,7 +32,7 @@ describe('Europe/Paris calendar windows', () => {
   it('walks back whole months and keeps a summer/winter offset', () => {
     const now = new Date('2026-11-11T12:00:00Z')
     const cases = [
-      ['1m', '2026-10-31T23:00:00.000Z', '1 mois'],
+      ['1m', '2026-10-31T23:00:00.000Z', 'Mois en cours'],
       ['3m', '2026-08-31T22:00:00.000Z', '3 mois'],
       ['6m', '2026-05-31T22:00:00.000Z', '6 mois'],
       ['1y', '2025-11-30T23:00:00.000Z', '1 an'],

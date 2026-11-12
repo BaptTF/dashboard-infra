@@ -18,7 +18,8 @@ export function SourceNotes() {
             la période et redémarrages traités. Les tokens et le cache utilisent{' '}
             <code className="font-mono text-[11px]">increase()</code>. Toutes les clés sont
             incluses, y compris <code className="font-mono text-[11px]">hermes-leo</code> et{' '}
-            <code className="font-mono text-[11px]">hermes-lea</code>.
+            <code className="font-mono text-[11px]">hermes-lea</code>. Le backfill est journalier ;
+            le live garde la granularité de la période.
           </p>
         </div>
         <div>
@@ -31,14 +32,19 @@ export function SourceNotes() {
             <code className="font-mono text-[11px]">hermes_window_*</code> pour{' '}
             <code className="font-mono text-[11px]">leo</code> et{' '}
             <code className="font-mono text-[11px]">lea</code>. Le cache reste hors de l’entrée.
-            C’est la même consommation que les clés Bifrost Hermes, vue par personne.
+            C’est une vue par personne, distincte des compteurs Bifrost : les noms de modèles et le
+            périmètre des sessions peuvent différer. Écart connu : certaines jauges Hermes ne voient
+            pas tous les modèles Bifrost (par exemple{' '}
+            <code className="font-mono text-[11px]">claude-opus-5-5</code>) ; le compteur Bifrost
+            reste la référence.
           </p>
         </div>
       </div>
       <p className="text-muted-foreground mt-3 flex items-start gap-1.5 text-xs">
         <ArrowLeftRight className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        Les tableaux Hermes ne sont jamais ajoutés au tableau Bifrost : ils détaillent le même
-        périmètre par personne, sans second montant.
+        Les tableaux Hermes ne sont jamais ajoutés au tableau Bifrost : ils détaillent la
+        consommation par personne, mais peuvent différer des compteurs Bifrost et ne servent pas de
+        second total.
       </p>
     </details>
   )

@@ -45,6 +45,8 @@ export interface ChartSeries {
 export interface ChartTable {
   columns: { label: string; align?: 'left' | 'right' }[]
   rows: ReactNode[][]
+  /** Optional total row. Kept separate so a sampled table can still state its real sum. */
+  footer?: ReactNode[]
 }
 
 const fallbackPalette = ['#0f766e', '#2563eb', '#b45309', '#b91c1c', '#7e22ce', '#15803d']
@@ -109,6 +111,7 @@ export function Chart({
   dataKey = 'default',
   emptyTitle = 'Aucun point à tracer',
   emptyDescription,
+  listLegend = false,
 }: {
   series: ChartSeries[]
   unit: 'percent' | 'currency' | 'tokens'
@@ -127,6 +130,8 @@ export function Chart({
   dataKey?: string
   emptyTitle?: string
   emptyDescription?: ReactNode
+  /** Render a DOM legend below the chart when the canvas legend would hide on mobile. */
+  listLegend?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null)
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null)
@@ -143,7 +148,16 @@ export function Chart({
   // Small legends stay readable on mobile as a wrapped DOM-free ECharts legend;
   // only large histories fall back to the accessible table.
   const legendVisible = series.length > 1 && (!narrow || series.length <= 4)
-  const legendMode = !legendVisible ? 'hidden' : narrow ? 'plain' : 'scroll'
+  // Five or more series do not fit in the canvas legend on a phone. The cost
+  // chart opts into a readable DOM legend instead of hiding the colours.
+  const legendAsList = listLegend && series.length > 1 && !legendVisible
+  const legendMode = legendVisible
+    ? narrow
+      ? 'plain'
+      : 'scroll'
+    : legendAsList
+      ? 'list'
+      : 'hidden'
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -189,6 +203,9 @@ export function Chart({
     const option = {
       animation: !reducedMotion,
       animationDuration: 400,
+      // Time-axis ticks must follow the same clock as the labels. Without this,
+      // ECharts places ticks on Paris midnight while the formatter prints UTC.
+      useUTC: xLabelMode === 'utc-day' || xLabelMode === 'utc-time',
       color: colors.palette,
       backgroundColor: 'transparent',
       aria: {
@@ -452,8 +469,26 @@ export function Chart({
         data-legend-mode={legendMode}
         data-x-label-mode={xLabelMode}
       />
+      {legendAsList ? (
+        <ul
+          className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]"
+          aria-label="Légende des séries"
+        >
+          {series.map((entry, index) => (
+            <li key={entry.name} className="inline-flex items-center gap-1.5">
+              <span
+                className="size-2 shrink-0 rounded-sm"
+                style={{ backgroundColor: `var(--chart-${(index % 6) + 1})` }}
+                aria-hidden="true"
+              />
+              <span className="text-muted-foreground">{entry.name}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {table ? (
         <details
+          key="chart-data-table"
           className="group mt-2"
           onToggle={(event) => setTableOpen(event.currentTarget.open)}
         >
@@ -506,6 +541,24 @@ export function Chart({
                   </tr>
                 ))}
               </tbody>
+              {table.footer ? (
+                <tfoot className="bg-muted/60 font-medium">
+                  <tr>
+                    {table.footer.map((cell, cellIndex) => (
+                      <td
+                        key={cellIndex}
+                        className={`border-t px-2 py-1.5 tabular-nums sm:px-2.5 ${table.columns[cellIndex]?.align === 'right' ? 'text-right' : ''} ${
+                          cellIndex === table.footer!.length - 1
+                            ? 'bg-muted sticky right-0 z-[2] sm:static sm:bg-transparent'
+                            : ''
+                        }`}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              ) : null}
             </table>
           </div>
           {tableOverflowing ? (

@@ -9,11 +9,20 @@ import {
   share,
 } from '~/lib/format'
 import { sumLeo, sumPeople } from '~/lib/spend'
-import { includesAgent, includesBifrost, type SpendSource } from '~/lib/spend-view'
+import {
+  includesAgent,
+  includesBifrost,
+  selectedBifrostKey,
+  type SpendSource,
+} from '~/lib/spend-view'
 import type { SpendReport } from '~/lib/types'
 
 export function SpendSummary({ report, source }: { report: SpendReport; source: SpendSource }) {
-  const bifrost = sumPeople(report.people, 'bifrost')
+  const selectedKey = selectedBifrostKey(source)
+  const people = selectedKey
+    ? report.people.filter((person) => person.virtualKey === selectedKey)
+    : report.people
+  const bifrost = sumPeople(people, 'bifrost')
   const leo = sumLeo(report.leo, report.leoOther)
   const lea = sumLeo(report.lea, report.leaOther)
   const cacheShare = share(bifrost.cacheRead, bifrost.tokensIn)
@@ -40,7 +49,6 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
   const showBifrost = includesBifrost(source) && hasBifrostData
   const showLeo = includesAgent(source, 'leo') && hasLeoData
   const showLea = includesAgent(source, 'lea') && hasLeaData
-  const hermesCost = (showLeo ? leo.costUsd : 0) + (showLea ? lea.costUsd : 0)
   const hermesSessions = (showLeo ? leo.sessions : 0) + (showLea ? lea.sessions : 0)
   const hermesCache = share(
     (showLeo ? leo.cacheRead + leo.cacheWrite : 0) + (showLea ? lea.cacheRead + lea.cacheWrite : 0),
@@ -58,7 +66,11 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
           <MetricCard
             label="Bifrost · coût"
             value={formatCurrency(bifrost.cost)}
-            hint="Compteurs Bifrost, clés Hermes incluses"
+            hint={
+              selectedKey
+                ? `Clé ${selectedKey} · compteurs Bifrost`
+                : 'Compteurs Bifrost, clés Hermes incluses'
+            }
             icon={Coins}
             tone="info"
             className="h-full p-3.5"
@@ -87,13 +99,13 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
         <MetricCard
           label={
             source === 'leo'
-              ? 'Hermes Léo · coût'
+              ? 'Hermes Léo · sessions'
               : source === 'lea'
-                ? 'Hermes Léa · coût'
-                : 'Hermes · coût'
+                ? 'Hermes Léa · sessions'
+                : 'Hermes · sessions'
           }
-          value={formatCurrency(hermesCost)}
-          hint={`${formatDecimal(hermesSessions)} sessions · cache ${formatPercent(hermesCache)} · vue non ajoutée`}
+          value={formatDecimal(hermesSessions)}
+          hint={`cache ${formatPercent(hermesCache)} · vue distincte, non ajoutée`}
           icon={Users}
           tone="warning"
           className="h-full p-3.5"

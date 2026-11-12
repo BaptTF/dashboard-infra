@@ -152,11 +152,16 @@ export interface BifrostCostReconstruction {
  * - without a baseline, the first sample is charged from zero: a backfill's
  *   first day of activity, or a live counter's cost since its reset;
  * - a decrease is a reset (delta = current value);
- * - deltas are bucketed in UTC, then summed by key for the curve and by
- *   key/provider/model for the report.
+ * - live deltas are bucketed at the period granularity; backfill stays daily
+ *   (its real resolution) and is dated at the end of the consumed UTC day;
+ * - deltas are summed by key for the curve and by key/provider/model for the
+ *   report.
  *
  * Each series keeps its provider/model/backfill identity, so a new series that
  * appears with a high cumulative value cannot create a false drop or spike.
+ * A backfill day that starts before the selected period is excluded: without
+ * hourly history it cannot be split honestly between the previous and current
+ * periods.
  */
 export function reconstructBifrostCost(
   rows: MetricSeries[],
@@ -165,6 +170,7 @@ export function reconstructBifrostCost(
   const byKey = new Map<string, Map<number, number>>()
   const byModel = new Map<string, { labels: MetricSample['labels']; cost: number }>()
   const toSeconds = plan.to.getTime() / 1000
+  const fromSeconds = plan.from.getTime() / 1000
 
   for (const row of rows) {
     const virtualKey = (row.labels.virtual_key_name ?? '').trim()
@@ -194,11 +200,21 @@ export function reconstructBifrostCost(
       previous = point.value
       if (delta <= 0) continue
 
-      // Backfill samples are dated by their consumed UTC day; live counters
-      // keep their exact timestamp and benefit from the finer bucket.
-      const timestamp = backfill ? spendHistoryPointTimestamp(point.timestamp) : point.timestamp
-      const bucket = Math.floor(timestamp / plan.bucketSeconds) * plan.bucketSeconds
-      if (bucket < plan.reconstructFrom || bucket > toSeconds) continue
+      // Backfill samples are daily counters dated by their consumed UTC day.
+      // Do not spread a daily total over a 1h/6h/12h bucket: that would invent
+      // intraday detail. Live counters keep their exact timestamp and benefit
+      // from the finer bucket.
+      let bucket: number
+      if (backfill) {
+        const consumed = spendHistoryPointTimestamp(point.timestamp)
+        const dayStart = Math.floor(consumed / DAY_SECONDS) * DAY_SECONDS
+        if (dayStart < fromSeconds) continue
+        bucket = dayStart + DAY_SECONDS - 60
+      } else {
+        bucket = Math.floor(point.timestamp / plan.bucketSeconds) * plan.bucketSeconds
+        if (bucket < plan.reconstructFrom) continue
+      }
+      if (bucket > toSeconds) continue
 
       let buckets = byKey.get(virtualKey)
       if (!buckets) {

@@ -7,20 +7,7 @@ import { StatusBanner } from '~/components/status-banner'
 import { Button } from '~/components/ui/button'
 import { formatParisDateTime, formatUtcDate, formatUtcDayTime } from '~/lib/dates'
 import { formatCurrency } from '~/lib/format'
-import type { MetricPoint, SpendGranularity, SpendHistory } from '~/lib/types'
-
-function downsample(points: MetricPoint[], maxPoints = 24): MetricPoint[] {
-  if (points.length <= maxPoints) return points
-  const step = Math.ceil(points.length / maxPoints)
-  const result: MetricPoint[] = []
-  for (let index = 0; index < points.length; index += step) {
-    const point = points[index]
-    if (point) result.push(point)
-  }
-  const last = points[points.length - 1]
-  if (last && result[result.length - 1]?.timestamp !== last.timestamp) result.push(last)
-  return result
-}
+import type { SpendGranularity, SpendHistory } from '~/lib/types'
 
 function granularityLabel(granularity: SpendGranularity): string {
   return granularity === 'hour'
@@ -32,53 +19,83 @@ function granularityLabel(granularity: SpendGranularity): string {
         : 'jour UTC'
 }
 
+function granularityDetail(granularity: SpendGranularity): string {
+  return granularity === 'day'
+    ? 'Points journaliers en UTC'
+    : `${granularityLabel(granularity)} pour le live · jour UTC pour le backfill`
+}
+
 export function SpendHistoryPanel({
   query,
   windowLabel,
+  onlyKeys,
+  filterLabel,
 }: {
   query: UseQueryResult<SpendHistory>
   windowLabel: string
+  onlyKeys?: string[]
+  filterLabel?: string
 }) {
   const data = query.data
-  const chartSeries =
-    data?.series.map((series) => ({
-      name: series.virtualKey,
-      points: series.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
-    })) ?? []
+  const series = data
+    ? onlyKeys
+      ? data.series.filter((entry) => onlyKeys.includes(entry.virtualKey))
+      : data.series
+    : []
+  const chartSeries = series.map((entry) => ({
+    name: entry.virtualKey,
+    points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
+  }))
   const fine =
     data?.granularity === 'hour' || data?.granularity === '6h' || data?.granularity === '12h'
-  const tableRows =
-    data?.series.flatMap((series) =>
-      downsample(series.points).map((point) => [
-        <span
-          key={`${series.virtualKey}-${point.timestamp}`}
-          className="whitespace-nowrap"
-          title={
-            fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)
-          }
-        >
-          {fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)}
-        </span>,
-        series.virtualKey,
-        formatCurrency(point.value),
-      ]),
-    ) ?? []
-  const pointCount = data?.series.reduce((total, series) => total + series.points.length, 0) ?? 0
-  // The table may be downsampled; the displayed total is always the full sum.
-  const curveTotal =
-    data?.series.reduce(
-      (total, series) => total + series.points.reduce((sum, point) => sum + point.value, 0),
-      0,
-    ) ?? 0
+  const tableRows = series
+    .flatMap((entry) => entry.points.map((point) => ({ virtualKey: entry.virtualKey, point })))
+    .sort((a, b) => b.point.timestamp - a.point.timestamp)
+    .map(({ virtualKey, point }) => [
+      <span
+        key={`${virtualKey}-${point.timestamp}`}
+        className="whitespace-nowrap"
+        title={
+          fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)
+        }
+      >
+        {fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)}
+      </span>,
+      virtualKey,
+      formatCurrency(point.value),
+    ])
+  const pointCount = series.reduce((total, entry) => total + entry.points.length, 0)
+  const curveTotal = series.reduce(
+    (total, entry) => total + entry.points.reduce((sum, point) => sum + point.value, 0),
+    0,
+  )
+  const firstSampleAt = series.reduce((first, entry) => {
+    const point = entry.points[0]
+    return point && point.timestamp < first ? point.timestamp : first
+  }, Number.POSITIVE_INFINITY)
+  const firstSample = Number.isFinite(firstSampleAt) ? firstSampleAt * 1000 : null
   const table: ChartTable = {
     columns: [
-      { label: fine ? 'Heure UTC' : 'Jour UTC' },
+      { label: fine ? 'Date/heure UTC' : 'Jour UTC' },
       { label: 'Clé' },
       { label: 'Coût', align: 'right' },
     ],
     rows: tableRows,
+    // The table contains every point; the footer repeats the exact raw sum so
+    // rounded rows cannot hide a missing bucket.
+    footer:
+      series.length > 0
+        ? [
+            'Total',
+            `${series.length} clé${series.length > 1 ? 's' : ''}`,
+            formatCurrency(curveTotal),
+          ]
+        : undefined,
   }
   const unitLabel = data ? granularityLabel(data.granularity) : 'jour UTC'
+  const detailLabel = data ? granularityDetail(data.granularity) : 'jour UTC'
+  const scope = filterLabel ?? (onlyKeys?.length ? onlyKeys.join(', ') : null)
+  const chartStepSeconds = data?.granularity === 'day' ? data.stepSeconds : undefined
 
   return (
     <Panel
@@ -88,12 +105,12 @@ export function SpendHistoryPanel({
           Courbe de coût Bifrost (UTC)
         </span>
       }
-      description={`Points datables, backfill inclus ; totaux identiques à la somme des points. ${windowLabel}.`}
+      description={`${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
       actions={
-        data && data.series.length > 0 ? (
+        series.length > 0 ? (
           <span className="text-muted-foreground text-[11px]">
-            Total courbe : {formatCurrency(curveTotal)} · {data.series.length} clé
-            {data.series.length > 1 ? 's' : ''}
+            Total courbe : {formatCurrency(curveTotal)} · {series.length} clé
+            {series.length > 1 ? 's' : ''}
           </span>
         ) : null
       }
@@ -129,10 +146,14 @@ export function SpendHistoryPanel({
           description="Renseignez PROMETHEUS_URL côté serveur pour activer la courbe."
           icon={LineChart}
         />
-      ) : data && data.series.length === 0 ? (
+      ) : data && series.length === 0 ? (
         <EmptyState
-          title="Pas encore d’historique"
-          description="Aucun compteur Bifrost exploitable sur cette période. La courbe ne complète jamais les jours manquants."
+          title={onlyKeys?.length ? 'Aucune donnée pour cette clé' : 'Pas encore d’historique'}
+          description={
+            onlyKeys?.length
+              ? `Aucun point Bifrost pour ${onlyKeys.join(', ')} sur cette période.`
+              : 'Aucun compteur Bifrost exploitable sur cette période. La courbe ne complète jamais les jours manquants.'
+          }
           icon={LineChart}
         />
       ) : data ? (
@@ -140,15 +161,16 @@ export function SpendHistoryPanel({
           <Chart
             series={chartSeries}
             unit="currency"
-            ariaLabel={`Coût Bifrost par ${unitLabel} pour ${windowLabel}`}
-            description={`Courbe empilée des coûts Bifrost par ${unitLabel}, par clé. Backfill inclus, totaux identiques à la somme des points. Les dates sont en UTC.`}
+            ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel} pour ${windowLabel}`}
+            description={`Courbe empilée des coûts Bifrost par ${unitLabel}, par clé. ${detailLabel}. Totaux identiques à la somme des points.`}
             height={330}
             stacked
             area
             xLabelMode={fine ? 'utc-time' : 'utc-day'}
             table={table}
-            stepSeconds={data.stepSeconds}
-            dataKey={`bifrost-${data.window}-${data.granularity}`}
+            stepSeconds={chartStepSeconds}
+            dataKey={`bifrost-${data.window}-${data.granularity}${onlyKeys?.length ? `-${onlyKeys.join('-')}` : ''}`}
+            listLegend
             emptyTitle="Aucun point dans cette période"
           />
           {pointCount === 1 ? (
@@ -160,10 +182,10 @@ export function SpendHistoryPanel({
             <span>
               Première mesure UTC :{' '}
               <strong className="text-foreground font-medium">
-                {data.firstSampleAt
+                {firstSample
                   ? fine
-                    ? formatUtcDayTime(data.firstSampleAt)
-                    : formatUtcDate(data.firstSampleAt)
+                    ? formatUtcDayTime(firstSample)
+                    : formatUtcDate(firstSample)
                   : 'inconnue'}
               </strong>
             </span>
@@ -172,7 +194,8 @@ export function SpendHistoryPanel({
                 ? 'Depuis le début (recherche limitée à 2 ans)'
                 : `Période sélectionnée (Paris) : depuis le ${formatParisDateTime(data.from)}`}
             </span>
-            <span>Source UTC, backfill daté au jour consommé.</span>
+            <span>Source UTC · backfill journalier daté au jour consommé.</span>
+            <span>Le jour UTC à cheval sur le début de période est exclu du backfill.</span>
           </div>
         </div>
       ) : null}

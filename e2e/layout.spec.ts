@@ -124,11 +124,15 @@ test('cost chart uses UTC fine buckets on desktop and mobile', async ({ page }, 
   const chart = page.locator('[data-data-key="bifrost-1m-hour"]')
   await chart.scrollIntoViewIfNeeded()
   await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-time')
-  // Many Bifrost keys hide the canvas legend and use the accessible table.
+  // Many Bifrost keys cannot fit in the mobile canvas legend: the chart shows
+  // a readable DOM legend instead of hiding the colour mapping.
   await expect(chart).toHaveAttribute(
     'data-legend-mode',
-    testInfo.project.name.includes('mobile') ? 'hidden' : 'scroll',
+    testInfo.project.name.includes('mobile') ? 'list' : 'scroll',
   )
+  if (testInfo.project.name.includes('mobile')) {
+    await expect(page.getByRole('list', { name: 'Légende des séries' })).toBeVisible()
+  }
 })
 
 test('cost history shows fine UTC buckets in the tooltip and table', async ({ page }, testInfo) => {
@@ -137,10 +141,16 @@ test('cost history shows fine UTC buckets in the tooltip and table', async ({ pa
   await chart.scrollIntoViewIfNeeded()
   await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-time')
 
-  await page.getByText('Voir les données sous forme de tableau').first().click()
+  await page.waitForTimeout(1000)
+  const summary = page
+    .locator('summary', { hasText: 'Voir les données sous forme de tableau' })
+    .first()
+  await summary.scrollIntoViewIfNeeded()
+  if (testInfo.project.name.includes('mobile')) await summary.tap()
+  else await summary.click()
   const table = page.getByRole('region', { name: /Données du graphique/ }).first()
   await expect(table).toBeVisible()
-  await expect(table.getByRole('columnheader', { name: 'Heure UTC' })).toBeVisible()
+  await expect(table.getByRole('columnheader', { name: 'Date/heure UTC' })).toBeVisible()
   const firstRow = table.getByRole('row').nth(1)
   await expect(firstRow.locator('[title]').first()).toHaveAttribute(
     'title',
