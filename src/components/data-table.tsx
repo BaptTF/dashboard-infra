@@ -7,6 +7,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableRowHeader,
 } from '~/components/ui/table'
 import { cn } from '~/lib/utils'
 
@@ -60,43 +61,46 @@ export function DataTable<T>({
     return (
       <Fragment key={rowKey}>
         <TableRow className={cn(depth > 0 && 'bg-muted/20')}>
-          {columns.map((column, index) => (
-            <TableCell
-              key={column.key}
-              className={cn(
-                column.align === 'right' && 'text-right',
-                index === 0 && 'min-w-40 sm:min-w-52',
-                column.className,
-              )}
-            >
-              {index === 0 ? (
-                <div
-                  className="flex items-center gap-1.5"
-                  style={{ paddingLeft: `${depth * 16}px` }}
-                >
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      onClick={() => toggle(id)}
-                      aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? 'Replier' : 'Déplier'} ${getRowLabel(row)}`}
-                      className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring -ml-1 flex size-6 shrink-0 items-center justify-center rounded focus-visible:ring-2 focus-visible:outline-none"
-                    >
-                      <ChevronRight
-                        className={cn('size-3.5 transition-transform', isExpanded && 'rotate-90')}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  ) : (
-                    <span className="size-6 shrink-0" aria-hidden="true" />
-                  )}
-                  <div className="min-w-0">{column.cell(row, depth)}</div>
-                </div>
-              ) : (
-                column.cell(row, depth)
-              )}
-            </TableCell>
-          ))}
+          {columns.map((column, index) => {
+            const className = cn(
+              column.align === 'right' && 'text-right',
+              index === 0 && 'min-w-40 sm:min-w-52',
+              column.className,
+            )
+            if (index === 0) {
+              return (
+                <TableRowHeader key={column.key} className={className}>
+                  <div
+                    className="flex items-center gap-1.5"
+                    style={{ paddingLeft: `${depth * 16}px` }}
+                  >
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => toggle(id)}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? 'Replier' : 'Déplier'} ${getRowLabel(row)}`}
+                        className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring -ml-1 flex size-9 shrink-0 items-center justify-center rounded focus-visible:ring-2 focus-visible:outline-none sm:size-6"
+                      >
+                        <ChevronRight
+                          className={cn('size-3.5 transition-transform', isExpanded && 'rotate-90')}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    ) : (
+                      <span className="size-9 shrink-0 sm:size-6" aria-hidden="true" />
+                    )}
+                    <div className="min-w-0">{column.cell(row, depth)}</div>
+                  </div>
+                </TableRowHeader>
+              )
+            }
+            return (
+              <TableCell key={column.key} className={className}>
+                {column.cell(row, depth)}
+              </TableCell>
+            )
+          })}
         </TableRow>
         {hasChildren && isExpanded
           ? children.map((child) => renderRows(child, depth + 1, [...ancestry, id]))

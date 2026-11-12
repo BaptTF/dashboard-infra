@@ -5,7 +5,7 @@ import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
 import { StatusBanner } from '~/components/status-banner'
 import { Button } from '~/components/ui/button'
-import { formatParisDateTime } from '~/lib/dates'
+import { formatParisDateTime, formatParisDateTimeCompact } from '~/lib/dates'
 import { formatCurrency } from '~/lib/format'
 import type { MetricPoint, SpendHistory } from '~/lib/types'
 
@@ -38,13 +38,19 @@ export function SpendHistoryPanel({
   const tableRows =
     data?.series.flatMap((series) =>
       downsample(series.points).map((point) => [
-        formatParisDateTime(point.timestamp * 1000),
+        <span
+          key={`${series.virtualKey}-${point.timestamp}`}
+          title={formatParisDateTime(point.timestamp * 1000)}
+        >
+          {formatParisDateTimeCompact(point.timestamp * 1000)}
+        </span>,
         series.virtualKey,
         formatCurrency(point.value),
       ]),
     ) ?? []
+  const pointCount = data?.series.reduce((total, series) => total + series.points.length, 0) ?? 0
   const table: ChartTable = {
-    columns: [{ label: 'Fin de seau' }, { label: 'Clé' }, { label: 'Coût', align: 'right' }],
+    columns: [{ label: 'Fin de période' }, { label: 'Clé' }, { label: 'Coût', align: 'right' }],
     rows: tableRows,
   }
 
@@ -99,7 +105,7 @@ export function SpendHistoryPanel({
       ) : data && data.series.length === 0 ? (
         <EmptyState
           title="Pas encore d’historique"
-          description="Aucun seau complet n’a encore été collecté pour cette période. La courbe démarrera au déploiement, sans historique synthétique."
+          description="Aucune période complète n’a encore été collectée. La courbe démarrera au déploiement, sans historique synthétique."
           icon={LineChart}
         />
       ) : data ? (
@@ -118,6 +124,11 @@ export function SpendHistoryPanel({
             dataKey={`bifrost-${data.window}-${data.bucket}`}
             emptyTitle="Aucun point dans cette période"
           />
+          {pointCount === 1 ? (
+            <p className="text-muted-foreground text-xs">
+              1 mesure, courbe à partir du prochain relevé.
+            </p>
+          ) : null}
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <span>
               Première mesure :{' '}

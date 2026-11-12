@@ -35,7 +35,7 @@ const PROVIDER_META: Record<ProviderSlug, ProviderMeta> = {
   devin: {
     slug: 'devin',
     name: 'Devin',
-    description: 'Quotas jour/semaine et consommation ACU',
+    description: 'Quotas quotidiens et hebdomadaires, consommation ACU',
     accent: 'var(--chart-3)',
   },
   other: {
@@ -65,6 +65,47 @@ export function providerMeta(raw: string | null | undefined): ProviderMeta {
 export function providerDisplayName(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim()
   return trimmed === '' ? 'Fournisseur inconnu' : trimmed
+}
+
+/** Short provider name for legends and tables. Unknown labels stay readable. */
+export function providerLabel(raw: string | null | undefined): string {
+  const slug = normalizeProvider(raw)
+  return slug === 'other' ? providerDisplayName(raw) : PROVIDER_META[slug].name
+}
+
+const OPENCODE_SUBSCRIPTION_LABELS: Record<string, string> = {
+  b: 'B',
+  r: 'R',
+  a: 'A',
+  n: 'N',
+}
+
+const CURSOR_SUBSCRIPTION_LABELS: Record<string, string> = {
+  r_personal: 'R Personal',
+  b_personal: 'B Personal',
+  b_student: 'B Student',
+}
+
+/**
+ * Display-only humanisation of the labels currently published by the exporter.
+ * Raw Prometheus labels are never rewritten: an unknown subscription is shown
+ * as-is, with no legacy alias mapping.
+ */
+export function subscriptionDisplayName(
+  provider: string | null | undefined,
+  subscription: string | null | undefined,
+): string {
+  const trimmed = (subscription ?? '').trim()
+  if (trimmed === '') return 'Abonnement inconnu'
+  const slug = normalizeProvider(provider)
+  if (slug === 'opencode') {
+    return OPENCODE_SUBSCRIPTION_LABELS[trimmed.toLowerCase()] ?? trimmed
+  }
+  if (slug === 'cursor') {
+    return CURSOR_SUBSCRIPTION_LABELS[trimmed.toLowerCase()] ?? trimmed
+  }
+  if (slug === 'devin' && trimmed.toLowerCase() === 'default') return 'Compte principal'
+  return trimmed
 }
 
 /**
@@ -393,6 +434,23 @@ export function quotaThresholds(
     return { warn: 0.7, critical: 0.9 }
   }
   return { warn: 0.8, critical: 0.95 }
+}
+
+/**
+ * A single threshold pair can only be drawn when every series shares the same
+ * exporter grid. Mixed providers/windows hide the markers instead of showing a
+ * misleading 80/95 line on Cursor or Devin data.
+ */
+export function sharedQuotaThresholds(
+  entries: Array<{ provider: string; window: QuotaWindow }>,
+): QuotaThresholds | null {
+  if (entries.length === 0) return null
+  const first = quotaThresholds(entries[0]!.provider, entries[0]!.window)
+  for (const entry of entries.slice(1)) {
+    const marks = quotaThresholds(entry.provider, entry.window)
+    if (marks.warn !== first.warn || marks.critical !== first.critical) return null
+  }
+  return first
 }
 
 export function quotaSeverityHint(provider: string, window: QuotaWindow): string {

@@ -10,9 +10,10 @@ import {
 import * as echarts from 'echarts/core'
 import { LegacyGridContainLabel } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
-import { ChartNoAxesCombined } from 'lucide-react'
+import { ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { formatParisDateTime, formatParisDay } from '~/lib/dates'
+import { fillGaps, hasIsolatedPoint, seriesHasValue } from '~/lib/chart-series'
+import { formatParisDateTime, formatParisDay, formatParisDayTime } from '~/lib/dates'
 import { formatCurrency, formatPercent, formatTokens } from '~/lib/format'
 import { useTheme } from './theme-provider'
 import { EmptyState } from './empty-state'
@@ -86,30 +87,6 @@ const monthYearFormatter = new Intl.DateTimeFormat('fr-FR', {
   year: '2-digit',
 })
 
-/**
- * Insert explicit nulls where a scrape step is missing. ECharts then draws a
- * real hole instead of joining two distant points with a straight line.
- */
-function fillGaps(
-  points: { x: number; y: number | null }[],
-  stepMs: number | undefined,
-): { x: number; y: number | null }[] {
-  if (!stepMs || stepMs <= 0 || points.length < 2) return points
-  const result: { x: number; y: number | null }[] = []
-  for (let index = 0; index < points.length; index += 1) {
-    const point = points[index]!
-    result.push(point)
-    const next = points[index + 1]
-    if (!next) continue
-    const gap = next.x - point.x
-    if (gap <= stepMs * 1.5) continue
-    for (let x = point.x + stepMs; x < next.x; x += stepMs) {
-      result.push({ x, y: null })
-    }
-  }
-  return result
-}
-
 export function Chart({
   series,
   unit,
@@ -150,16 +127,25 @@ export function Chart({
   const zoomState = useRef<{ key: string; start: number; end: number } | null>(null)
   const { resolvedTheme } = useTheme()
   const [reducedMotion, setReducedMotion] = useState(false)
+  const [narrow, setNarrow] = useState(false)
+  const [tableOpen, setTableOpen] = useState(false)
   const descriptionId = useId()
-  const hasData = series.some((entry) => entry.points.length > 0)
+  const hasData = series.some((entry) => seriesHasValue(entry.points))
   const stepMs = stepSeconds != null ? stepSeconds * 1000 : undefined
 
   useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setReducedMotion(media.matches)
-    update()
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const mobile = window.matchMedia('(max-width: 767px)')
+    const updateMotion = () => setReducedMotion(motion.matches)
+    const updateWidth = () => setNarrow(mobile.matches)
+    updateMotion()
+    updateWidth()
+    motion.addEventListener('change', updateMotion)
+    mobile.addEventListener('change', updateWidth)
+    return () => {
+      motion.removeEventListener('change', updateMotion)
+      mobile.removeEventListener('change', updateWidth)
+    }
   }, [])
 
   useEffect(() => {
@@ -182,13 +168,16 @@ export function Chart({
       },
       grid: {
         left: 6,
-        right: 18,
-        top: series.length > 1 ? 50 : 22,
+        // Keep the last timestamp label fully visible instead of clipping it.
+        right: 32,
+        top: series.length > 1 && !narrow ? 50 : 22,
         bottom: 54,
         containLabel: true,
       },
       legend: {
-        show: series.length > 1,
+        // Canvas legend pagination is unusable on mobile; the accessible table
+        // below the chart always carries the series names instead.
+        show: series.length > 1 && !narrow,
         type: 'scroll',
         top: 0,
         left: 0,
@@ -206,6 +195,8 @@ export function Chart({
         trigger: 'axis',
         confine: true,
         className: 'chart-tooltip',
+        extraCssText:
+          'max-height: min(60vh, 320px); overflow-y: auto; max-width: min(92vw, 420px);',
         backgroundColor: colors.background,
         borderColor: colors.grid,
         borderWidth: 1,
@@ -270,15 +261,11 @@ export function Chart({
           color: colors.muted,
           fontSize: 10,
           hideOverlap: true,
+          showMaxLabel: true,
+          margin: 8,
           formatter: (value: number) => {
             if (xLabelMode === 'month') return monthYearFormatter.format(new Date(value))
-            if (xLabelMode === 'time') {
-              return `${formatParisDay(value)} ${new Intl.DateTimeFormat('fr-FR', {
-                timeZone: 'Europe/Paris',
-                hour: '2-digit',
-                minute: '2-digit',
-              }).format(new Date(value))}`
-            }
+            if (xLabelMode === 'time') return formatParisDayTime(value)
             return formatParisDay(value)
           },
         },
@@ -299,13 +286,17 @@ export function Chart({
       },
       series: series.map((entry, index) => {
         const color = entry.color ?? colors.palette[index % colors.palette.length]
+        const filled = fillGaps(entry.points, stepMs)
+        // A singleton or a point cut off by holes has no line segment: draw its
+        // symbol so real data never looks like an empty chart.
+        const isolated = hasIsolatedPoint(filled, stepMs)
         return {
           type: 'line',
           name: entry.name,
-          data: fillGaps(entry.points, stepMs).map((point) => [point.x, point.y]),
-          showSymbol: false,
+          data: filled.map((point) => [point.x, point.y]),
+          showSymbol: isolated,
           symbol: 'circle',
-          symbolSize: 5,
+          symbolSize: 4,
           smooth: false,
           sampling: 'lttb',
           connectNulls: false,
@@ -371,6 +362,7 @@ export function Chart({
     dataKey,
     description,
     hasData,
+    narrow,
     reducedMotion,
     resolvedTheme,
     series,
@@ -415,11 +407,19 @@ export function Chart({
         aria-label={ariaLabel}
         aria-describedby={description ? descriptionId : undefined}
         data-data-key={dataKey}
+        data-series-count={series.length}
       />
       {table ? (
-        <details className="group mt-2">
-          <summary className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex min-h-6 items-center rounded text-xs font-medium focus-visible:ring-2 focus-visible:outline-none">
-            Voir les données sous forme de tableau
+        <details
+          className="group mt-2"
+          onToggle={(event) => setTableOpen(event.currentTarget.open)}
+        >
+          <summary className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex min-h-9 items-center gap-1.5 rounded text-xs font-medium focus-visible:ring-2 focus-visible:outline-none sm:min-h-6">
+            <ChevronRight
+              className="size-3.5 shrink-0 transition-transform group-open:rotate-90"
+              aria-hidden="true"
+            />
+            {tableOpen ? 'Masquer les données' : 'Voir les données sous forme de tableau'}
           </summary>
           <div
             className="scroll-shadow mt-2 max-h-72 overflow-auto rounded-md border"

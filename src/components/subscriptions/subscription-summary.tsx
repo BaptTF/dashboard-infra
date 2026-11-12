@@ -3,7 +3,13 @@ import { MetricCard } from '~/components/metric-card'
 import { Badge } from '~/components/ui/badge'
 import { formatParisDateTime, quotaWindowLabel } from '~/lib/dates'
 import { formatDecimal, formatPercent } from '~/lib/format'
-import { pickWeakestQuota, providerMeta, severityCount, severityLabel } from '~/lib/providers'
+import {
+  pickWeakestQuota,
+  providerMeta,
+  severityCount,
+  severityLabel,
+  subscriptionDisplayName,
+} from '~/lib/providers'
 import type { Severity, SubscriptionsOverview } from '~/lib/types'
 
 function severityBadgeVariant(severity: Severity | null) {
@@ -26,18 +32,14 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
   const weakestMeta = weakest ? providerMeta(weakest.quota.provider) : null
 
   return (
-    <div className="grid grid-cols-2 items-start gap-2.5 sm:gap-3 xl:grid-cols-3">
+    <div className="grid grid-cols-2 items-stretch gap-2.5 sm:gap-3 xl:grid-cols-3">
       <MetricCard
         label="Maillon faible"
         value={
           weakest ? (
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="text-base leading-tight font-semibold">
-                {weakestMeta?.name ?? weakest.quota.provider}
-              </span>
-              <span className="text-muted-foreground max-w-52 text-xs font-medium break-words">
-                {weakest.quota.subscription}
-              </span>
+            <span className="block min-w-0 text-base leading-tight font-semibold break-words">
+              {weakestMeta?.name ?? weakest.quota.provider} ·{' '}
+              {subscriptionDisplayName(weakest.quota.provider, weakest.quota.subscription)}
             </span>
           ) : (
             '—'
@@ -66,7 +68,7 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
         }
         icon={ShieldAlert}
         tone={severityTone(weakest?.severity ?? null)}
-        className="col-span-2 p-3.5 xl:col-span-1"
+        className="col-span-2 h-full p-3.5 xl:col-span-1"
       />
       <MetricCard
         label="Jours à sec"
@@ -83,15 +85,15 @@ export function SubscriptionSummary({ overview }: { overview: SubscriptionsOverv
         }
         icon={TimerReset}
         tone={severityTone(weakest?.severity ?? null)}
-        className="p-3.5"
+        className="h-full p-3.5"
       />
       <MetricCard
         label="Quotas sous tension"
         value={`${atRisk} / ${overview.quotas.length}`}
-        hint="Sévérité exportée · repères 80 / 95 ou 70 / 90 selon le fournisseur"
+        hint="Sévérité exportée. Un badge Dérapage peut aussi venir de la projection des jours à sec avant le reset."
         icon={ShieldAlert}
         tone={atRisk > 0 ? 'warning' : 'success'}
-        className="p-3.5"
+        className="h-full p-3.5"
       />
     </div>
   )

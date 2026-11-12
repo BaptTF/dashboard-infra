@@ -14,7 +14,7 @@ import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
 import { QuotaBar } from '~/components/quota-bar'
 import { Badge } from '~/components/ui/badge'
-import { countdown, formatParisDateTime, quotaWindowLabel } from '~/lib/dates'
+import { countdown, formatParisDateTime, quotaWindowInvariant, quotaWindowLabel } from '~/lib/dates'
 import {
   formatCurrency,
   formatDecimal,
@@ -25,12 +25,15 @@ import {
 } from '~/lib/format'
 import {
   collectionLevel,
+  providerLabel,
+  quotaThresholds,
+  subscriptionDisplayName,
   subscriptionJoinKey,
   type ProviderGroup,
   type ProviderSubscription,
   type ProviderSlug,
 } from '~/lib/providers'
-import type { CollectionStatus, Severity, SubscriptionsOverview } from '~/lib/types'
+import type { CollectionStatus, QuotaWindow, Severity, SubscriptionsOverview } from '~/lib/types'
 
 const providerIcons: Record<ProviderSlug, LucideIcon> = {
   opencode: Terminal,
@@ -71,14 +74,44 @@ function collectionDetail(collection: CollectionStatus | null): string {
   return 'Collecte sans indicateur exploitable.'
 }
 
-function providerQuotaHint(slug: ProviderSlug): string {
-  if (slug === 'opencode') {
-    return 'Repères : 80 % / 95 % (mensuel, hebdo) · 70 % / 90 % (glissant 5 h).'
+function providerQuotaHint(subscriptions: ProviderSubscription[]): string | null {
+  const quotas = subscriptions.flatMap((subscription) =>
+    subscription.quotas.map((quota) => ({ provider: subscription.provider, window: quota.window })),
+  )
+  if (quotas.length === 0) return null
+  const grids = new Map<string, Set<QuotaWindow>>()
+  for (const quota of quotas) {
+    const marks = quotaThresholds(quota.provider, quota.window)
+    const key = `${Math.round(marks.warn * 100)} / ${Math.round(marks.critical * 100)}`
+    const windows = grids.get(key) ?? new Set<QuotaWindow>()
+    windows.add(quota.window)
+    grids.set(key, windows)
   }
-  if (slug === 'cursor' || slug === 'devin') {
-    return 'Repères : 70 % / 90 % (niveau absolu) · temps écoulé et jours à sec informatifs.'
-  }
-  return 'Repères : 80 % / 95 %.'
+  const parts = [...grids.entries()].map(
+    ([marks, windows]) =>
+      `${marks} (${[...windows].map((window) => quotaWindowLabel(window).toLowerCase()).join(', ')})`,
+  )
+  return `Repères : ${parts.join(' · ')}.`
+}
+
+function quotaWindowLine(subscriptions: ProviderSubscription[]): string | null {
+  const windows = [
+    ...new Set(
+      subscriptions.flatMap((subscription) => subscription.quotas.map((quota) => quota.window)),
+    ),
+  ]
+  if (windows.length === 0) return null
+  return `Fenêtres : ${windows
+    .map((window) => `${quotaWindowLabel(window)} — ${quotaWindowInvariant(window)}`)
+    .join(' · ')}.`
+}
+
+function subscriptionGridClass(count: number): string {
+  if (count <= 1) return 'grid gap-3'
+  if (count === 2 || count === 4) return 'grid gap-3 sm:grid-cols-2'
+  if (count % 3 === 0) return 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+  // Five OpenCode subscriptions become 3 + 2 instead of one orphan card.
+  return 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
 }
 
 function spendSeverity(ratio: number | null): Severity | null {
@@ -121,9 +154,11 @@ function SubscriptionCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold break-words">{subscription.subscription}</h3>
+          <h3 className="text-sm font-semibold break-words">
+            {subscriptionDisplayName(subscription.provider, subscription.subscription)}
+          </h3>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            {subscription.provider}
+            {providerLabel(subscription.provider)}
             {subscription.quotas.length > 0
               ? ` · ${subscription.quotas.length} fenêtre${subscription.quotas.length > 1 ? 's' : ''}`
               : ''}
@@ -220,7 +255,7 @@ function SubscriptionCard({
           ) : null}
           {otherAcu.length > 0 ? (
             <details className="mt-2">
-              <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center text-xs font-medium">
+              <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-9 items-center text-xs font-medium sm:min-h-6">
                 Détail par produit
               </summary>
               <ul className="text-muted-foreground mt-1 space-y-0.5 text-xs">
@@ -354,14 +389,17 @@ export function ProviderCard({
       </div>
 
       {visibleSubscriptions.some((subscription) => subscription.quotas.length > 0) ? (
-        <p className="text-muted-foreground text-xs">{providerQuotaHint(group.slug)}</p>
+        <div className="text-muted-foreground space-y-1 text-xs">
+          <p>{providerQuotaHint(visibleSubscriptions)}</p>
+          <p>{quotaWindowLine(visibleSubscriptions)}</p>
+        </div>
       ) : null}
       {group.slug === 'opencode' ? (
         <p className="text-muted-foreground text-xs">{weightFreshnessLine(overview)}</p>
       ) : null}
 
       {visibleSubscriptions.length > 0 ? (
-        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))] items-start gap-3">
+        <div className={subscriptionGridClass(visibleSubscriptions.length)}>
           {visibleSubscriptions.map((subscription) => (
             <SubscriptionCard
               key={`${subscription.provider}-${subscription.subscription}`}
@@ -380,7 +418,7 @@ export function ProviderCard({
 
       {detachedWeights.length > 0 ? (
         <details className="rounded-md border px-3 py-2">
-          <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center text-xs font-medium">
+          <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-9 items-center text-xs font-medium sm:min-h-6">
             {detachedWeights.length} clé{detachedWeights.length > 1 ? 's' : ''} de poids sans
             abonnement
           </summary>
@@ -393,7 +431,8 @@ export function ProviderCard({
                 <span className="min-w-0 font-mono text-[11px] break-all">
                   {weight.key}
                   <span className="text-muted-foreground block font-sans">
-                    {weight.provider} · {weight.subscription}
+                    {providerLabel(weight.provider)} ·{' '}
+                    {subscriptionDisplayName(weight.provider, weight.subscription)}
                   </span>
                 </span>
                 <span className="tnum shrink-0 font-semibold">{formatWeight(weight.weight)}</span>
@@ -409,7 +448,7 @@ export function ProviderCard({
           {group.spendBuckets.map((bucket) => (
             <QuotaBar
               key={`${bucket.subscription}-${bucket.bucket}`}
-              label={`${bucket.subscription} · ${quotaLabel(bucket.bucket)}`}
+              label={`${subscriptionDisplayName(bucket.provider, bucket.subscription)} · ${quotaLabel(bucket.bucket)}`}
               window="monthly"
               usedRatio={bucket.usedRatio}
               elapsedRatio={null}
@@ -428,7 +467,8 @@ export function ProviderCard({
         <div className="flex flex-wrap gap-1.5 border-t pt-3">
           {group.acu.map((acu) => (
             <Badge key={`${acu.subscription}-${acu.product}`} variant="secondary">
-              {acu.subscription} · {formatNumber(acu.consumed)} ACU · {acu.product}
+              {subscriptionDisplayName(acu.provider, acu.subscription)} ·{' '}
+              {formatNumber(acu.consumed)} ACU · {acu.product}
             </Badge>
           ))}
         </div>

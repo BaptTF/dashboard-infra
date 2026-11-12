@@ -51,7 +51,8 @@ export function Table({
         ref={scrollRef}
         className="scroll-shadow overflow-x-auto"
         role="region"
-        aria-label={scrollLabel ?? 'Tableau défilable horizontalement'}
+        aria-label={overflowing ? (scrollLabel ?? 'Tableau défilable horizontalement') : undefined}
+        aria-labelledby={overflowing ? undefined : labelledBy}
         tabIndex={0}
       >
         <table
@@ -110,6 +111,17 @@ export function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCel
 
 export function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
   return <td className={cn('px-2.5 py-2.5 align-middle', className)} {...props} />
+}
+
+/** First cell of a data row; keeps the row associated with its label. */
+export function TableRowHeader({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th
+      scope="row"
+      className={cn('px-2.5 py-2.5 text-left align-middle font-normal', className)}
+      {...props}
+    />
+  )
 }
 
 export function TableCaption({ className, ...props }: HTMLAttributes<HTMLTableCaptionElement>) {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { formatCurrency, formatDecimal, formatPercent, formatTokens, share } from '~/lib/format'
+import {
+  formatCurrency,
+  formatDecimal,
+  formatPercent,
+  formatTokens,
+  quotaLabel,
+  share,
+} from '~/lib/format'
 
 describe('French formatting', () => {
   it('formats dollars, tokens and ratios', () => {
@@ -16,5 +23,11 @@ describe('French formatting', () => {
     expect(share(0, 0)).toBe(0)
     expect(formatCurrency(null)).toBe('—')
     expect(formatPercent(Number.NaN)).toBe('—')
+  })
+
+  it('translates quota kinds used in legends and tables', () => {
+    expect(quotaLabel('on_demand')).toBe('Hors forfait')
+    expect(quotaLabel('included')).toBe('Inclus')
+    expect(quotaLabel('api')).toBe('API')
   })
 })

@@ -6,8 +6,10 @@ import { Panel } from '~/components/panel'
 import { StatusBanner } from '~/components/status-banner'
 import { TimeRangePicker } from '~/components/time-range-picker'
 import { Button } from '~/components/ui/button'
-import { formatParisDateTime, quotaWindowLabel } from '~/lib/dates'
-import { formatPercent, historyRangeLabel } from '~/lib/format'
+import { formatParisDateTime, formatParisDateTimeCompact, quotaWindowLabel } from '~/lib/dates'
+import { formatPercent, historyRangeLabel, quotaLabel } from '~/lib/format'
+import { providerLabel, sharedQuotaThresholds, subscriptionDisplayName } from '~/lib/providers'
+import { mergeQuotaHistorySeries } from '~/lib/subscriptions'
 import type { HistoryRange, QuotaHistory, QuotaWindow } from '~/lib/types'
 import type { MetricPoint } from '~/lib/types'
 
@@ -41,41 +43,77 @@ export function QuotaHistoryPanel({
   query,
   window,
   range,
+  hasQuotaForWindow,
 }: {
   query: UseQueryResult<QuotaHistory>
   window: QuotaWindow
   range: HistoryRange
+  /** Distinguishes "no daily series exported" from "not collected yet". */
+  hasQuotaForWindow?: boolean
 }) {
   const data = query.data
-  const chartSeries =
-    data?.series.map((series) => ({
-      name: `${series.subscription} · ${series.quota}`,
-      points: series.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
-    })) ?? []
+  // The server already merges exact duplicates; doing it again protects the
+  // client from placeholder payloads and keeps the legend count stable.
+  const series = data ? mergeQuotaHistorySeries(data.series) : []
+  const chartSeries = series.map((entry) => ({
+    name: `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)} · ${quotaLabel(entry.quota)}`,
+    points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
+  }))
+  const thresholds = sharedQuotaThresholds(
+    series.map((entry) => ({ provider: entry.provider, window: entry.window })),
+  )
+  const thresholdPercent = thresholds
+    ? `${Math.round(thresholds.warn * 100)} % et ${Math.round(thresholds.critical * 100)} %`
+    : null
+  const pointCount = series.reduce((total, entry) => total + entry.points.length, 0)
 
-  const tableRows =
-    data?.series.flatMap((series) =>
-      downsample(series.points).map((point) => [
-        formatParisDateTime(point.timestamp * 1000),
-        series.subscription,
-        series.quota,
-        formatPercent(point.value),
-      ]),
-    ) ?? []
+  const tableRows = series.flatMap((entry) =>
+    downsample(entry.points).map((point) => [
+      <span
+        key={`${entry.provider}-${entry.subscription}-${entry.quota}-${point.timestamp}`}
+        title={formatParisDateTime(point.timestamp * 1000)}
+      >
+        {formatParisDateTimeCompact(point.timestamp * 1000)}
+      </span>,
+      providerLabel(entry.provider),
+      subscriptionDisplayName(entry.provider, entry.subscription),
+      quotaLabel(entry.quota),
+      formatPercent(point.value),
+    ]),
+  )
   const table: ChartTable = {
     columns: [
       { label: 'Date' },
+      { label: 'Fournisseur' },
       { label: 'Abonnement' },
-      { label: 'Fenêtre' },
+      { label: 'Quota' },
       { label: 'Consommé', align: 'right' },
     ],
     rows: tableRows,
   }
 
+  const dailyWithoutSeries = window === 'daily' && hasQuotaForWindow === false
+  const emptyTitle = dailyWithoutSeries
+    ? 'Aucune série quotidienne exportée'
+    : hasQuotaForWindow === false
+      ? 'Pas encore de collecte'
+      : 'Pas encore d’historique'
+  const emptyDescription = dailyWithoutSeries
+    ? 'Aucun exporteur ne publie de fenêtre quotidienne pour le moment. La courbe apparaîtra seulement si une série quotidienne est réellement collectée.'
+    : hasQuotaForWindow === false
+      ? 'Aucune série de quota n’est exportée pour cette fenêtre. Aucun historique synthétique n’est fabriqué.'
+      : 'Aucun point n’a encore été collecté pour cette fenêtre. Aucun historique synthétique n’est fabriqué : la courbe démarrera au premier scrape.'
+
+  const description = thresholdPercent
+    ? `Consommation observée dans Prometheus. Repères à ${thresholdPercent} pour cette fenêtre. Les trous de collecte restent visibles.`
+    : series.length > 0
+      ? 'Consommation observée dans Prometheus. Plusieurs grilles de repères coexistent : les seuils sont masqués pour ne pas induire en erreur. Les trous de collecte restent visibles.'
+      : 'Consommation observée dans Prometheus. La courbe commence à la première série collectée, jamais avant.'
+
   return (
     <Panel
       title="Historique des quotas"
-      description="Consommation observée dans Prometheus. La courbe commence à la première série collectée, jamais avant."
+      description={description}
       actions={
         <>
           <TimeRangePicker
@@ -126,32 +164,29 @@ export function QuotaHistoryPanel({
           description="Renseignez PROMETHEUS_URL côté serveur pour activer l’historique."
           icon={CalendarClock}
         />
-      ) : data && data.series.length === 0 ? (
-        <EmptyState
-          title="Pas encore d’historique"
-          description={
-            data.error
-              ? data.error
-              : 'Aucun point n’a encore été collecté pour cette fenêtre. Aucun historique synthétique n’est fabriqué : la courbe démarrera au premier scrape.'
-          }
-          icon={CalendarClock}
-        />
+      ) : data && series.length === 0 ? (
+        <EmptyState title={emptyTitle} description={emptyDescription} icon={CalendarClock} />
       ) : data ? (
         <div className="space-y-3">
           <Chart
             series={chartSeries}
             unit="percent"
             ariaLabel={`Historique de consommation des quotas — ${quotaWindowLabel(window)}, ${historyRangeLabel(range)}`}
-            description={`Courbe de consommation des quotas — ${quotaWindowLabel(window)} sur ${historyRangeLabel(range)}. Les seuils 80 % et 95 % sont marqués en pointillés.`}
+            description={`Courbe de consommation des quotas — ${quotaWindowLabel(window)} sur ${historyRangeLabel(range)}. ${description}`}
             height={300}
-            thresholdLines={[0.8, 0.95]}
+            thresholdLines={thresholds ? [thresholds.warn, thresholds.critical] : undefined}
             yMax={1.05}
-            xLabelMode={range === '90d' ? 'month' : 'day'}
+            xLabelMode="time"
             table={table}
             stepSeconds={data.stepSeconds}
             dataKey={`quotas-${window}-${range}`}
             emptyTitle="Aucun point dans cette fenêtre"
           />
+          {pointCount === 1 ? (
+            <p className="text-muted-foreground text-xs">
+              1 mesure, courbe à partir du prochain relevé.
+            </p>
+          ) : null}
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <span>
               Première mesure :{' '}

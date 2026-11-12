@@ -38,12 +38,17 @@ test('the chart tooltip is styled, readable and absent at rest in light mode', a
       foreground: root.getPropertyValue('--foreground'),
       border: computed.borderTopWidth,
       padding: computed.paddingTop,
+      maxHeight: computed.maxHeight,
+      overflowY: computed.overflowY,
     }
   })
   expect(normalizeColor(style.background)).toBe(normalizeColor(style.card))
   expect(normalizeColor(style.color)).toBe(normalizeColor(style.foreground))
   expect(style.border).not.toBe('0px')
   expect(style.padding).not.toBe('0px')
+  // A long legend must scroll inside the tooltip instead of growing off-screen.
+  expect(style.maxHeight).not.toBe('none')
+  expect(style.overflowY).toBe('auto')
 })
 
 test('the chart tooltip uses the dark theme surface instead of white', async ({
@@ -82,8 +87,44 @@ test('mobile scroll hint only appears when a table really overflows', async ({
   await region.scrollIntoViewIfNeeded()
   const overflow = await region.evaluate((element) => element.scrollWidth > element.clientWidth + 1)
   const hint = region.locator('xpath=following-sibling::p[1]')
-  if (overflow) await expect(hint).toBeVisible()
-  else await expect(hint).toHaveCount(0)
+  if (overflow) {
+    await expect(hint).toBeVisible()
+    await expect(region).toHaveAttribute('aria-label', /tableau défilable/)
+  } else {
+    await expect(hint).toHaveCount(0)
+    // The scroll region must not claim to be scrollable when it is not.
+    await expect(region).not.toHaveAttribute('aria-label', /tableau défilable/)
+  }
+})
+
+test('mobile tables keep tokens, cache and sessions reachable without horizontal scroll', async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'mobile data access scenario')
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+
+  const bifrostRow = page.getByRole('row').filter({ hasText: 'tailscale-camille' }).first()
+  await bifrostRow.scrollIntoViewIfNeeded()
+  await expect(bifrostRow.getByText('Entrée', { exact: true })).toBeVisible()
+  await expect(bifrostRow.getByText('Cache lu', { exact: true })).toBeVisible()
+  await expect(bifrostRow.getByText('Sortie', { exact: true })).toBeVisible()
+
+  const hermesRow = page.getByRole('row').filter({ hasText: 'Camille' }).last()
+  await hermesRow.scrollIntoViewIfNeeded()
+  await expect(hermesRow.getByText('Sessions', { exact: true })).toBeVisible()
+})
+
+test('mobile history uses compact dates instead of four-line timestamps', async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'mobile history scenario')
+  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await page.getByText('Voir les données sous forme de tableau').first().click()
+  const table = page.getByRole('region', { name: /Données du graphique/ }).first()
+  await expect(table).toBeVisible()
+  const compact = table.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/).first()
+  await expect(compact).toBeVisible()
+  await expect(compact).toHaveAttribute('title', /\d{4}/)
 })
 
 test('history panel header and filters wrap on a narrow viewport', async ({ page }, testInfo) => {

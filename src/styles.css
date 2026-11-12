@@ -187,7 +187,7 @@
   box-shadow: 0 4px 18px oklch(0 0 0 / 12%);
 
   &:focus {
-    @apply not-sr-only fixed top-3 left-3;
+    @apply not-sr-only fixed top-3 left-3 px-4 py-2;
   }
 }
 
@@ -199,6 +199,9 @@
 @layer components {
   .chart-tooltip {
     @apply border-border bg-popover text-popover-foreground rounded-md border px-3 py-2 text-xs shadow-lg;
+    max-height: min(60vh, 320px);
+    max-width: min(92vw, 420px);
+    overflow-y: auto;
   }
 
   .chart-tooltip:empty {

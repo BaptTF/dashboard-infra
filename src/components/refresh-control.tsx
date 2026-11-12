@@ -28,7 +28,7 @@ export function RefreshControl({
     <div className={cn('flex items-center gap-2', className)}>
       <Button
         variant="outline"
-        size={compact ? 'icon-sm' : 'sm'}
+        size={compact ? 'icon' : 'sm'}
         onClick={refresh}
         disabled={isFetching > 0}
         aria-label="Actualiser les données"

@@ -118,6 +118,17 @@ export function FreshnessBadge({
   const since = hasCollection ? relativeSince(value.lastSuccessAt!, now) : null
   const clockAhead = since === 'horloge source en avance'
   const unknownSince = 'aucun succès connu'
+  const compactAge =
+    since && since !== 'horloge source en avance' ? since.replace(/^il y a /, '') : null
+  const compactLabel = neutral
+    ? '—'
+    : failed
+      ? `Échec${compactAge ? ` · ${compactAge}` : ''}`
+      : partial
+        ? `Partiel${compactAge ? ` · ${compactAge}` : ''}`
+        : value.stale
+          ? `Retard${compactAge ? ` · ${compactAge}` : ''}`
+          : `À jour${compactAge ? ` · ${compactAge}` : ''}`
   const label = neutral
     ? 'Aucune collecte reçue'
     : failed
@@ -155,15 +166,7 @@ export function FreshnessBadge({
       </span>
       {compact ? (
         <span suppressHydrationWarning className="sm:hidden">
-          {neutral
-            ? '—'
-            : failed
-              ? 'Échec'
-              : partial
-                ? 'Partiel'
-                : value.stale
-                  ? 'Retard'
-                  : 'À jour'}
+          {compactLabel}
         </span>
       ) : null}
     </span>

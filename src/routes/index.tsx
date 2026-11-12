@@ -154,6 +154,7 @@ function SubscriptionsPage() {
                 query={historyQuery}
                 window={search.window}
                 range={search.history}
+                hasQuotaForWindow={data.quotas.some((quota) => quota.window === search.window)}
               />
             </div>
           )

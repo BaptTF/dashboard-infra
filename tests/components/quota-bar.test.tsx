@@ -40,7 +40,9 @@ describe('QuotaBar', () => {
       />,
     )
     expect(screen.queryByText(/Temps écoulé/)).not.toBeInTheDocument()
-    expect(screen.getAllByText(/Fenêtre glissante/).length).toBeGreaterThan(0)
+    // Window invariants now live once in the provider header, not under every bar.
+    expect(screen.queryByText(/Fenêtre glissante/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Consommé/)).not.toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toHaveAttribute(
       'title',
       'Repères de consommation à 70 % et 90 %',
@@ -50,7 +52,7 @@ describe('QuotaBar', () => {
   it('uses 70/90 markers for Cursor absolute levels', () => {
     render(
       <QuotaBar
-        label="Mensuel · Forfait inclus"
+        label="Mensuel · Inclus"
         window="monthly"
         usedRatio={0.5}
         elapsedRatio={0.4}

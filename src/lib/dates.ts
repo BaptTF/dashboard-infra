@@ -35,6 +35,22 @@ const frenchWeekday = new Intl.DateTimeFormat('fr-FR', {
   month: 'short',
 })
 
+const frenchDayTime = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TIME_ZONE,
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const frenchDateTimeCompact = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TIME_ZONE,
+  day: '2-digit',
+  month: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 interface ZonedParts {
   year: number
   month: number
@@ -182,6 +198,20 @@ export function quotaWindowHint(window: QuotaWindow): string {
   }
 }
 
+/** Compact invariant shown once per provider, never under every bar. */
+export function quotaWindowInvariant(window: QuotaWindow): string {
+  switch (window) {
+    case 'weekly':
+      return 'lundi 00:00 UTC'
+    case 'daily':
+      return '24 h avant reset'
+    case 'rolling':
+      return '5 h glissantes, sans début'
+    default:
+      return 'cycle propre'
+  }
+}
+
 export function spendWindowLabel(window: SpendWindow): string {
   return window === '3m'
     ? '3 mois'
@@ -218,6 +248,24 @@ export function formatParisDay(value: Date | number | string | null | undefined)
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return frenchWeekday.format(date)
+}
+
+/** Short axis label for hourly windows: "10 nov. 05:15", never four times a day. */
+export function formatParisDayTime(value: Date | number | string | null | undefined): string {
+  if (value == null) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return frenchDayTime.format(date)
+}
+
+/** Compact history cell: "12/11 05:15"; the full date stays in the title. */
+export function formatParisDateTimeCompact(
+  value: Date | number | string | null | undefined,
+): string {
+  if (value == null) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return frenchDateTimeCompact.format(date)
 }
 
 export function relativeTime(value: number | string | Date, now = Date.now()): string {

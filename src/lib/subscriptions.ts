@@ -7,6 +7,7 @@ import type {
   KeyWeight,
   MetricSample,
   QuotaWindow,
+  QuotaHistorySeries,
   Severity,
   SpendBucket,
   SubscriptionCost,
@@ -107,6 +108,68 @@ export function parseQuotaWindowLabel(value: string | null | undefined): QuotaWi
 
 export function quotaHistoryQuery(window: QuotaWindow): string {
   return `${QUOTA_HISTORY_METRIC}{window="${quotaWindowMetricValue(window)}"}`
+}
+
+/**
+ * Collapses exact duplicate history rows (same provider, subscription, window,
+ * quota and timestamp) and keeps the highest value at that timestamp. No label
+ * alias is applied here: current exporter labels are canonical by themselves.
+ */
+export function mergeQuotaHistorySeries(series: QuotaHistorySeries[]): QuotaHistorySeries[] {
+  const groups = new Map<
+    string,
+    {
+      provider: string
+      subscription: string
+      window: QuotaWindow
+      quota: string
+      points: Map<number, number>
+    }
+  >()
+
+  for (const row of series) {
+    const provider = (row.provider ?? '').trim()
+    const subscription = (row.subscription ?? '').trim()
+    const quota = (row.quota ?? '').trim()
+    const key = [provider, subscription, row.window, quota].join('\u0000')
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        provider: provider || 'inconnu',
+        subscription: subscription || 'Abonnement inconnu',
+        window: row.window,
+        quota: quota || 'quota',
+        points: new Map(),
+      }
+      groups.set(key, group)
+    }
+    for (const point of row.points) {
+      if (!Number.isFinite(point.timestamp) || !Number.isFinite(point.value)) continue
+      if (point.value < 0) continue
+      const current = group.points.get(point.timestamp)
+      if (current == null || point.value > current) {
+        group.points.set(point.timestamp, point.value)
+      }
+    }
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      provider: group.provider,
+      subscription: group.subscription,
+      window: group.window,
+      quota: group.quota,
+      points: [...group.points.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([timestamp, value]) => ({ timestamp, value })),
+    }))
+    .filter((group) => group.points.length > 0)
+    .sort(
+      (a, b) =>
+        a.subscription.localeCompare(b.subscription, 'fr') ||
+        a.provider.localeCompare(b.provider, 'fr') ||
+        a.quota.localeCompare(b.quota, 'fr'),
+    )
 }
 
 function label(sample: MetricSample, name: string): string {

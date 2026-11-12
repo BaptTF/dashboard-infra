@@ -13,11 +13,43 @@ import type { LeoUser, SpendReport } from '~/lib/types'
 
 const secondary = 'hidden md:table-cell'
 
+function MobileStat({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="inline-flex items-baseline gap-1">
+      <dt>{label}</dt>
+      <dd className="tnum text-foreground font-medium" title={title}>
+        {value}
+      </dd>
+    </div>
+  )
+}
+
 const spendColumns: DataTableColumn<SpendViewRow>[] = [
   {
     key: 'name',
     header: 'Clé · fournisseur · modèle',
-    cell: (row) => <p className="text-sm font-medium break-words">{row.label}</p>,
+    cell: (row) => (
+      <div>
+        <p className="text-sm font-medium break-words">{row.label}</p>
+        <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
+          <MobileStat
+            label="Entrée"
+            value={formatTokens(row.tokensIn)}
+            title={formatTokensExact(row.tokensIn)}
+          />
+          <MobileStat
+            label="Cache lu"
+            value={formatTokens(row.cacheRead)}
+            title={formatTokensExact(row.cacheRead)}
+          />
+          <MobileStat
+            label="Sortie"
+            value={formatTokens(row.tokensOut)}
+            title={formatTokensExact(row.tokensOut)}
+          />
+        </dl>
+      </div>
+    ),
   },
   {
     key: 'cost',
@@ -67,7 +99,34 @@ const hermesColumns: DataTableColumn<HermesViewRow>[] = [
   {
     key: 'name',
     header: 'Personne · fournisseur · modèle',
-    cell: (row) => <p className="text-sm font-medium break-words">{row.label}</p>,
+    cell: (row) => (
+      <div>
+        <p className="text-sm font-medium break-words">{row.label}</p>
+        <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
+          <MobileStat
+            label="Entrée"
+            value={formatTokens(row.tokensIn)}
+            title={formatTokensExact(row.tokensIn)}
+          />
+          <MobileStat
+            label="Cache lu"
+            value={formatTokens(row.cacheRead)}
+            title={formatTokensExact(row.cacheRead)}
+          />
+          <MobileStat
+            label="Cache écrit"
+            value={formatTokens(row.cacheWrite)}
+            title={formatTokensExact(row.cacheWrite)}
+          />
+          <MobileStat
+            label="Sortie"
+            value={formatTokens(row.tokensOut)}
+            title={formatTokensExact(row.tokensOut)}
+          />
+          <MobileStat label="Sessions" value={formatDecimal(row.sessions)} />
+        </dl>
+      </div>
+    ),
   },
   {
     key: 'cost',

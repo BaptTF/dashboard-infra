@@ -9,6 +9,7 @@ import {
   assembleWeights,
   assembleWeightStatus,
   buildSubscriptionQueries,
+  mergeQuotaHistorySeries,
   parseQuotaWindowLabel,
   quotaHistoryQuery,
   type SubscriptionMetricKey,
@@ -186,16 +187,13 @@ export async function fetchQuotaHistory(
       Math.floor(now.getTime() / 1000),
       stepSeconds,
     )
-    let first = Number.POSITIVE_INFINITY
-    const series: QuotaHistorySeries[] = []
+    const raw: QuotaHistorySeries[] = []
     for (const row of rows) {
       const rowWindow = historyWindow(row.labels.window ?? '')
       if (!rowWindow) continue
       const points = row.points.filter((point) => point.value >= 0)
       if (points.length === 0) continue
-      const firstPoint = points[0]
-      if (firstPoint && firstPoint.timestamp < first) first = firstPoint.timestamp
-      series.push({
+      raw.push({
         provider: (row.labels.provider ?? '').trim() || 'inconnu',
         subscription: (row.labels.subscription ?? '').trim() || 'Abonnement inconnu',
         window: rowWindow,
@@ -203,12 +201,12 @@ export async function fetchQuotaHistory(
         points,
       })
     }
-    series.sort(
-      (a, b) =>
-        a.subscription.localeCompare(b.subscription, 'fr') ||
-        a.provider.localeCompare(b.provider, 'fr') ||
-        a.quota.localeCompare(b.quota, 'fr'),
-    )
+    const series = mergeQuotaHistorySeries(raw)
+    let first = Number.POSITIVE_INFINITY
+    for (const entry of series) {
+      const firstPoint = entry.points[0]
+      if (firstPoint && firstPoint.timestamp < first) first = firstPoint.timestamp
+    }
     return {
       ...base,
       series,

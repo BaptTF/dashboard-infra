@@ -9,6 +9,7 @@ import {
   assembleWeights,
   assembleWeightStatus,
   buildSubscriptionQueries,
+  mergeQuotaHistorySeries,
   parseQuotaWindowLabel,
   quotaHistoryQuery,
 } from '~/lib/subscriptions'
@@ -19,9 +20,12 @@ import {
   collectionLevel,
   groupOverview,
   pickWeakestQuota,
+  providerLabel,
   quotaSeverityHint,
   quotaThresholds,
   severityCount,
+  sharedQuotaThresholds,
+  subscriptionDisplayName,
   subscriptionJoinKey,
   totalMonthlyCost,
 } from '~/lib/providers'
@@ -528,5 +532,80 @@ describe('normalized provider/subscription join', () => {
     const onlyUnknown = [{ ...quotas[1]! }]
     expect(pickWeakestQuota(onlyUnknown)?.severity).toBeNull()
     expect(severityCount(onlyUnknown, 0)).toBe(0)
+  })
+})
+
+describe('current subscription labels and history deduplication', () => {
+  it('humanises current exporter labels without rewriting the raw value', () => {
+    expect(providerLabel('opencode')).toBe('OpenCode')
+    expect(subscriptionDisplayName('opencode', 'b')).toBe('B')
+    expect(subscriptionDisplayName('opencode', 'r')).toBe('R')
+    expect(subscriptionDisplayName('opencode', 'a')).toBe('A')
+    expect(subscriptionDisplayName('opencode', 'n')).toBe('N')
+    expect(subscriptionDisplayName('cursor', 'r_personal')).toBe('R Personal')
+    expect(subscriptionDisplayName('cursor', 'b_personal')).toBe('B Personal')
+    expect(subscriptionDisplayName('cursor', 'b_student')).toBe('B Student')
+    expect(subscriptionDisplayName('devin', 'default')).toBe('Compte principal')
+    expect(subscriptionDisplayName('opencode', 'inconnu')).toBe('inconnu')
+  })
+
+  it('merges only exact provider/subscription/window/quota duplicates pointwise', () => {
+    const series = mergeQuotaHistorySeries([
+      {
+        provider: 'opencode',
+        subscription: 'b',
+        window: 'monthly',
+        quota: 'total',
+        points: [
+          { timestamp: 100, value: 0.2 },
+          { timestamp: 200, value: 0.3 },
+        ],
+      },
+      {
+        provider: 'opencode',
+        subscription: 'b',
+        window: 'monthly',
+        quota: 'total',
+        points: [
+          { timestamp: 100, value: 0.4 },
+          { timestamp: 300, value: 0.1 },
+        ],
+      },
+      {
+        provider: 'opencode',
+        subscription: 'b',
+        window: 'weekly',
+        quota: 'total',
+        points: [{ timestamp: 100, value: 0.1 }],
+      },
+    ])
+    expect(series).toHaveLength(2)
+    const monthly = series.find((entry) => entry.window === 'monthly')
+    expect(monthly?.points).toEqual([
+      { timestamp: 100, value: 0.4 },
+      { timestamp: 200, value: 0.3 },
+      { timestamp: 300, value: 0.1 },
+    ])
+    // A different window is never merged, even with the same timestamp.
+    expect(series.find((entry) => entry.window === 'weekly')?.points).toHaveLength(1)
+  })
+
+  it('keeps labels distinct and hides markers when threshold grids are mixed', () => {
+    expect(sharedQuotaThresholds([{ provider: 'opencode', window: 'monthly' }])).toEqual({
+      warn: 0.8,
+      critical: 0.95,
+    })
+    expect(
+      sharedQuotaThresholds([
+        { provider: 'opencode', window: 'rolling' },
+        { provider: 'cursor', window: 'rolling' },
+      ]),
+    ).toEqual({ warn: 0.7, critical: 0.9 })
+    expect(
+      sharedQuotaThresholds([
+        { provider: 'opencode', window: 'monthly' },
+        { provider: 'cursor', window: 'monthly' },
+      ]),
+    ).toBeNull()
   })
 })

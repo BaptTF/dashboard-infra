@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { Badge } from '~/components/ui/badge'
-import { countdown, quotaWindowHint } from '~/lib/dates'
+import { countdown } from '~/lib/dates'
 import { formatDecimal, formatPercent } from '~/lib/format'
 import {
   normalizeProvider,
@@ -80,7 +80,7 @@ export function QuotaBar({
             <span className="text-sm font-medium">{label}</span>
             <Badge variant={severityBadge(severity)}>{severityLabel(severity)}</Badge>
           </div>
-          <p className="text-muted-foreground mt-0.5 text-xs">{hint ?? quotaWindowHint(window)}</p>
+          {hint ? <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p> : null}
         </div>
         <div className="flex flex-wrap items-baseline justify-end gap-2">
           {dryDaysMeaningful ? (
@@ -133,15 +133,8 @@ export function QuotaBar({
         </div>
       </div>
 
-      <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span className="inline-flex items-center gap-1">
-          <span
-            className={cn('size-1.5 rounded-full', severityClass(severity))}
-            aria-hidden="true"
-          />
-          Consommé {formatPercent(usedRatio)}
-        </span>
-        {elapsed != null ? (
+      {elapsed != null ? (
+        <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <span className="inline-flex items-center gap-1">
             <span
               className="bg-foreground inline-block h-2.5 w-[2px] rounded-full"
@@ -149,10 +142,8 @@ export function QuotaBar({
             />
             Temps écoulé {formatPercent(elapsedRatio)}
           </span>
-        ) : window === 'rolling' ? (
-          <span>Fenêtre glissante : pas de début de période</span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {resetAt != null ? (
         <p suppressHydrationWarning className="text-muted-foreground mt-1 text-xs">

@@ -53,6 +53,33 @@ test('drills from person to provider and model, and keeps period/source in the U
   )
 })
 
+test('back and forward resynchronise period and source controls', async ({ page }) => {
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  const oneMonth = page.getByRole('button', { name: 'Mois en cours', exact: true })
+  const threeMonths = page.getByRole('button', { name: '3 mois', exact: true })
+  const all = page.getByRole('button', { name: 'Tout', exact: true })
+  const leo = page.getByRole('button', { name: 'Léo', exact: true })
+
+  await threeMonths.click()
+  await expect(threeMonths).toHaveAttribute('aria-pressed', 'true')
+  await leo.click()
+  await expect(leo).toHaveAttribute('aria-pressed', 'true')
+
+  await page.goBack()
+  await expect(page).toHaveURL(/source=all/)
+  await expect(all).toHaveAttribute('aria-pressed', 'true')
+  await expect(leo).toHaveAttribute('aria-pressed', 'false')
+
+  await page.goBack()
+  await expect(page).toHaveURL(/window=1m/)
+  await expect(oneMonth).toHaveAttribute('aria-pressed', 'true')
+  await expect(threeMonths).toHaveAttribute('aria-pressed', 'false')
+
+  await page.goForward()
+  await expect(threeMonths).toHaveAttribute('aria-pressed', 'true')
+  await expect(oneMonth).toHaveAttribute('aria-pressed', 'false')
+})
+
 test('a slow filter change keeps previous data visible and announces the update', async ({
   page,
 }) => {
@@ -61,7 +88,9 @@ test('a slow filter change keeps previous data visible and announces the update'
 
   await page.route('**/_serverFn/**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1200))
-    await route.continue()
+    // A superseded server-function request can already be handled by the time
+    // the artificial delay ends; the test only needs the slow initial request.
+    await route.continue().catch(() => undefined)
   })
 
   await page.getByRole('button', { name: '3 mois', exact: true }).click()

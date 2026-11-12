@@ -3,7 +3,7 @@ import { ArrowLeftRight, Gauge, Timer } from 'lucide-react'
 export function SourceNotes() {
   return (
     <details className="bg-card rounded-lg border px-4 py-3">
-      <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-6 items-center text-xs font-medium">
+      <summary className="text-muted-foreground hover:text-foreground inline-flex min-h-9 items-center text-xs font-medium sm:min-h-6">
         Notes techniques · deux sources, deux horloges
       </summary>
       <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">

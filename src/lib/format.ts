@@ -97,7 +97,7 @@ export function pluralize(count: number, singular: string, plural = `${singular}
 
 const QUOTA_LABELS: Record<string, string> = {
   total: 'Quota total',
-  included: 'Forfait inclus',
+  included: 'Inclus',
   api: 'API',
   on_demand: 'Hors forfait',
   'on-demand': 'Hors forfait',

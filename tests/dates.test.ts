@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   QUOTA_WINDOWS,
   countdown,
+  formatParisDateTimeCompact,
+  formatParisDayTime,
   historyRangeStart,
   normalizeHistoryRange,
   normalizeQuotaWindow,
@@ -73,5 +75,11 @@ describe('Europe/Paris calendar windows', () => {
     expect(countdown(now / 1000 + 90, now)).toBe('dans 1 min')
     expect(countdown(now / 1000 + 3600 * 5, now)).toBe('dans 5 h 0 min')
     expect(countdown(now / 1000 - 1, now)).toBe('reset imminent')
+  })
+
+  it('formats short axis and compact history dates', () => {
+    const value = Date.parse('2026-11-12T04:15:00Z')
+    expect(formatParisDayTime(value)).toMatch(/12 nov\..*05:15/)
+    expect(formatParisDateTimeCompact(value)).toMatch(/12\/11\s+05:15/)
   })
 })

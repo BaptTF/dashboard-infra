@@ -52,7 +52,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
   if (!showBifrost && !showHermes) return null
 
   return (
-    <div className="grid grid-cols-2 items-start gap-2.5 sm:gap-3 xl:grid-cols-4">
+    <div className="grid grid-cols-2 items-stretch gap-2.5 sm:gap-3 xl:grid-cols-4">
       {showBifrost ? (
         <>
           <MetricCard
@@ -61,7 +61,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
             hint="Compteurs Bifrost sur la période"
             icon={Coins}
             tone="info"
-            className="p-3.5"
+            className="h-full p-3.5"
           />
           <MetricCard
             label="Bifrost · tokens"
@@ -70,7 +70,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
             hint={`${formatTokens(bifrost.tokensIn)} entrée · ${formatTokens(bifrost.tokensOut)} sortie`}
             icon={Database}
             tone="neutral"
-            className="p-3.5"
+            className="h-full p-3.5"
           />
           <MetricCard
             label="Bifrost · cache lu"
@@ -79,7 +79,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
             hint={`${formatPercent(cacheShare)} des tokens d’entrée`}
             icon={Zap}
             tone="success"
-            className="p-3.5"
+            className="h-full p-3.5"
           />
         </>
       ) : null}
@@ -96,7 +96,7 @@ export function SpendSummary({ report, source }: { report: SpendReport; source: 
           hint={`${formatDecimal(hermesSessions)} sessions · cache ${formatPercent(hermesCache)}`}
           icon={Users}
           tone="warning"
-          className="p-3.5"
+          className="h-full p-3.5"
         />
       ) : null}
     </div>
