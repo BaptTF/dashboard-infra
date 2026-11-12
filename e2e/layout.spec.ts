@@ -114,19 +114,44 @@ test('mobile tables keep tokens, cache and sessions reachable without horizontal
   await expect(hermesRow.getByText('Sessions', { exact: true })).toBeVisible()
 })
 
-test('cost chart uses time ticks for daily buckets on desktop and mobile', async ({
-  page,
-}, testInfo) => {
+test('cost chart uses UTC day ticks on desktop and mobile', async ({ page }, testInfo) => {
   await gotoHydrated(page, '/consommation?window=1m&source=all')
   const chart = page.locator('[data-data-key="bifrost-1m-day"]')
   await chart.scrollIntoViewIfNeeded()
-  await expect(chart).toHaveAttribute('data-x-label-mode', 'time')
+  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-day')
   // Three cost keys fit as a wrapped legend on mobile; larger grids only use
   // the table fallback.
   await expect(chart).toHaveAttribute(
     'data-legend-mode',
     testInfo.project.name.includes('mobile') ? 'plain' : 'scroll',
   )
+})
+
+test('cost history shows the consumed UTC day in the tooltip and table', async ({
+  page,
+}, testInfo) => {
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  const chart = page.locator('[data-data-key="bifrost-1m-day"]')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-day')
+
+  await page.getByText('Voir les données sous forme de tableau').first().click()
+  const table = page.getByRole('region', { name: /Données du graphique/ }).first()
+  await expect(table).toBeVisible()
+  await expect(table.getByRole('columnheader', { name: 'Jour UTC' })).toBeVisible()
+  const firstRow = table.getByRole('row').nth(1)
+  await expect(firstRow).toContainText('31/10')
+  await expect(firstRow.locator('[title]').first()).toHaveAttribute('title', /31\s+oct\..*2026/)
+
+  if (!testInfo.project.name.includes('mobile')) {
+    const tooltip = await hoverChart(page)
+    if (!tooltip) return
+    await expect(tooltip).toBeVisible()
+    const firstLine = (await tooltip.innerText()).split('\n')[0]?.trim() ?? ''
+    // Date only: the UTC day must never be rendered with the Paris time 00:59.
+    expect(firstLine).toMatch(/^\d{1,2}\s+\S+\s+2026$/)
+    expect(firstLine).not.toContain(':')
+  }
 })
 
 test('mobile header shows a short freshness label and aligned KPI titles', async ({

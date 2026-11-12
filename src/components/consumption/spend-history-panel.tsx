@@ -5,7 +5,7 @@ import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
 import { StatusBanner } from '~/components/status-banner'
 import { Button } from '~/components/ui/button'
-import { formatParisDateTime, formatParisDateTimeCompact } from '~/lib/dates'
+import { formatParisDateTime, formatUtcDate, formatUtcDateCompact } from '~/lib/dates'
 import { formatCurrency } from '~/lib/format'
 import type { MetricPoint, SpendHistory } from '~/lib/types'
 
@@ -41,9 +41,9 @@ export function SpendHistoryPanel({
         <span
           key={`${series.virtualKey}-${point.timestamp}`}
           className="whitespace-nowrap"
-          title={formatParisDateTime(point.timestamp * 1000)}
+          title={formatUtcDate(point.timestamp * 1000)}
         >
-          {formatParisDateTimeCompact(point.timestamp * 1000)}
+          {formatUtcDateCompact(point.timestamp * 1000)}
         </span>,
         series.virtualKey,
         formatCurrency(point.value),
@@ -51,7 +51,11 @@ export function SpendHistoryPanel({
     ) ?? []
   const pointCount = data?.series.reduce((total, series) => total + series.points.length, 0) ?? 0
   const table: ChartTable = {
-    columns: [{ label: 'Fin de période' }, { label: 'Clé' }, { label: 'Coût', align: 'right' }],
+    columns: [
+      { label: data?.bucket === 'week' ? 'Fin de période UTC' : 'Jour UTC' },
+      { label: 'Clé' },
+      { label: 'Coût', align: 'right' },
+    ],
     rows: tableRows,
   }
 
@@ -60,10 +64,10 @@ export function SpendHistoryPanel({
       title={
         <span className="flex items-center gap-2">
           <LineChart className="size-3.5" aria-hidden="true" />
-          Courbe de coût Bifrost
+          Courbe de coût Bifrost (UTC)
         </span>
       }
-      description={`Coût Bifrost par ${data?.bucket === 'week' ? 'semaine' : 'jour'}, ${windowLabel}, reconstruit depuis les compteurs Bifrost disponibles, backfill inclus.`}
+      description={`Courbe : coûts ${data?.bucket === 'week' ? 'hebdomadaires' : 'journaliers'} datables en UTC — Totaux : backfill inclus. ${windowLabel}.`}
       actions={
         data ? (
           <span className="text-muted-foreground text-[11px]">
@@ -114,12 +118,12 @@ export function SpendHistoryPanel({
           <Chart
             series={chartSeries}
             unit="currency"
-            ariaLabel={`Coût Bifrost par ${data.bucket === 'week' ? 'semaine' : 'jour'} pour ${windowLabel}`}
-            description={`Courbe empilée du coût Bifrost par clé et par ${data.bucket === 'week' ? 'semaine' : 'jour'}, reconstruite depuis les compteurs disponibles, backfill inclus. Les clés Hermes sont exclues.`}
+            ariaLabel={`Coût Bifrost par ${data.bucket === 'week' ? 'semaine UTC' : 'jour UTC'} pour ${windowLabel}`}
+            description={`Courbe empilée des coûts Bifrost datables en ${data.bucket === 'week' ? 'semaines UTC' : 'jours UTC'}, par clé. Les jours sont affichés en UTC, sans heure. Les clés Hermes sont exclues.`}
             height={330}
             stacked
             area
-            xLabelMode={data.bucket === 'week' ? 'month' : 'time'}
+            xLabelMode="utc-day"
             table={table}
             stepSeconds={data.stepSeconds}
             dataKey={`bifrost-${data.window}-${data.bucket}`}
@@ -132,12 +136,12 @@ export function SpendHistoryPanel({
           ) : null}
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <span>
-              Première mesure :{' '}
+              Première mesure UTC :{' '}
               <strong className="text-foreground font-medium">
-                {data.firstSampleAt ? formatParisDateTime(data.firstSampleAt) : 'inconnue'}
+                {data.firstSampleAt ? formatUtcDate(data.firstSampleAt) : 'inconnue'}
               </strong>
             </span>
-            <span>Fenêtre depuis le {formatParisDateTime(data.from)}</span>
+            <span>Période sélectionnée (Paris) : depuis le {formatParisDateTime(data.from)}</span>
             <span>Exclues : {data.excludedKeys.join(', ')}</span>
             <span>
               Les totaux incluent le backfill ; seuls les coûts avec un historique datable

@@ -51,6 +51,19 @@ const frenchDateTimeCompact = new Intl.DateTimeFormat('fr-FR', {
   minute: '2-digit',
 })
 
+const utcDate = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+const utcDateCompact = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'UTC',
+  day: '2-digit',
+  month: '2-digit',
+})
+
 interface ZonedParts {
   year: number
   month: number
@@ -266,6 +279,22 @@ export function formatParisDateTimeCompact(
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return frenchDateTimeCompact.format(date)
+}
+
+/** UTC consumed day for the Bifrost cost curve: "31 oct. 2026", no time. */
+export function formatUtcDate(value: Date | number | string | null | undefined): string {
+  if (value == null) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return utcDate.format(date)
+}
+
+/** Compact UTC consumed day for the history table: "31/10". */
+export function formatUtcDateCompact(value: Date | number | string | null | undefined): string {
+  if (value == null) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return utcDateCompact.format(date)
 }
 
 export function relativeTime(value: number | string | Date, now = Date.now()): string {

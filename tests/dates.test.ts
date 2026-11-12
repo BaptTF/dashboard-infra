@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   QUOTA_WINDOWS,
   countdown,
+  formatParisDateTime,
   formatParisDateTimeCompact,
   formatParisDayTime,
+  formatUtcDate,
+  formatUtcDateCompact,
   historyRangeStart,
   normalizeHistoryRange,
   normalizeQuotaWindow,
@@ -81,5 +84,14 @@ describe('Europe/Paris calendar windows', () => {
     const value = Date.parse('2026-11-12T04:15:00Z')
     expect(formatParisDayTime(value)).toMatch(/12 nov\..*05:15/)
     expect(formatParisDateTimeCompact(value)).toMatch(/12\/11\s+05:15/)
+  })
+
+  it('formats the consumed UTC day without drifting to the Paris next day', () => {
+    const value = Date.parse('2026-10-31T23:59:00Z')
+    expect(formatUtcDate(value)).toMatch(/31\s+oct\..*2026/)
+    expect(formatUtcDateCompact(value)).toBe('31/10')
+    // Other dashboards keep the Paris formatters: 23:59 UTC is 00:59 on 1 Nov.
+    expect(formatParisDateTime(value)).toMatch(/1 nov\..*00:59/)
+    expect(formatParisDateTimeCompact(value)).toMatch(/01\/11\s+00:59/)
   })
 })

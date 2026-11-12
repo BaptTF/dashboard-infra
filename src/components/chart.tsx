@@ -13,7 +13,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { fillGaps, hasIsolatedPoint, seriesHasValue } from '~/lib/chart-series'
-import { formatParisDateTime, formatParisDay, formatParisDayTime } from '~/lib/dates'
+import { formatParisDateTime, formatParisDay, formatParisDayTime, formatUtcDate } from '~/lib/dates'
 import { formatCurrency, formatPercent, formatTokens } from '~/lib/format'
 import { useTheme } from './theme-provider'
 import { EmptyState } from './empty-state'
@@ -113,7 +113,7 @@ export function Chart({
   area?: boolean
   thresholdLines?: number[]
   yMax?: number
-  xLabelMode?: 'day' | 'month' | 'time'
+  xLabelMode?: 'day' | 'month' | 'time' | 'utc-day'
   table?: ChartTable
   /** Sampling step. Missing steps become null so real holes stay visible. */
   stepSeconds?: number
@@ -193,7 +193,7 @@ export function Chart({
       grid: {
         left: 6,
         // Keep the last timestamp label fully visible instead of clipping it.
-        right: xLabelMode === 'time' ? 44 : 32,
+        right: xLabelMode === 'time' || xLabelMode === 'utc-day' ? 44 : 32,
         top: legendVisible ? (narrow ? 72 : 50) : 22,
         bottom: 54,
         containLabel: true,
@@ -259,7 +259,10 @@ export function Chart({
             .join('')
           if (rows === '') return ''
           const first = params[0] as { axisValue?: number } | undefined
-          return `<div><div style="color:${escapeHtml(colors.muted)};font-size:10px;margin-bottom:4px">${escapeHtml(formatParisDateTime(first?.axisValue ?? Date.now()))}</div>${rows}</div>`
+          const axisValue = first?.axisValue ?? Date.now()
+          const date =
+            xLabelMode === 'utc-day' ? formatUtcDate(axisValue) : formatParisDateTime(axisValue)
+          return `<div><div style="color:${escapeHtml(colors.muted)};font-size:10px;margin-bottom:4px">${escapeHtml(date)}</div>${rows}</div>`
         },
       },
       dataZoom: [
@@ -290,6 +293,7 @@ export function Chart({
           formatter: (value: number) => {
             if (xLabelMode === 'month') return monthYearFormatter.format(new Date(value))
             if (xLabelMode === 'time') return formatParisDayTime(value)
+            if (xLabelMode === 'utc-day') return formatUtcDate(value)
             return formatParisDay(value)
           },
         },
