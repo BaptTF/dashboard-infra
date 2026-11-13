@@ -195,7 +195,7 @@ function ConsumptionPage() {
                   {!hermesAllTime && includesAgent(search.source, 'leo') ? (
                     <HermesTable
                       title="Hermes Léo · personnes Telegram"
-                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer) ; jamais ajoutée. Cron, API et TUI sont repliés sur la ligne hors Telegram."
+                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer, ex. claude-opus-5-5) ; jamais ajoutée. Cron, API et TUI sont repliés sur la ligne hors Telegram."
                       users={data.leo}
                       other={data.leoOther}
                       otherLabel="Hors Telegram"
@@ -205,7 +205,7 @@ function ConsumptionPage() {
                   {!hermesAllTime && includesAgent(search.source, 'lea') ? (
                     <HermesTable
                       title="Hermes Léa · Telegram et OpenClaw"
-                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer) ; jamais ajoutée. Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram."
+                      description="Vue Hermes par personne, source distincte des compteurs Bifrost (noms de modèles et périmètre peuvent différer, ex. claude-opus-5-5) ; jamais ajoutée. Historique OpenClaw compté aux dates des transcriptions ; cron et reste repliés sur la ligne hors Telegram."
                       users={data.lea}
                       other={data.leaOther}
                       otherLabel="Hors Telegram"
@@ -219,9 +219,9 @@ function ConsumptionPage() {
                       title="Vue Hermes par personne indisponible pour Depuis le début"
                     >
                       Les jauges Hermes ne sont pas exportées sur cette période. Les totaux Bifrost{' '}
-                      {selectedKey ? `de la clé ${selectedKey}` : 'des clés Hermes'} restent
-                      affichés ci-dessus ; choisissez Mois en cours à 1 an pour le détail par
-                      personne.
+                      {selectedKey ? `de la clé ${selectedKey}` : 'de toutes les clés'} restent
+                      affichés ci-dessus ; choisissez une période plus courte (Mois en cours à 1 an)
+                      pour le détail par personne.
                     </StatusBanner>
                   ) : null}
                 </>

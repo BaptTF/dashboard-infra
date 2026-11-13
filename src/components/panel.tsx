@@ -38,7 +38,11 @@ export function Panel({
           </div>
         ) : null}
       </CardHeader>
-      <CardContent className={cn('pt-4 sm:pt-5', contentClassName)} aria-labelledby={id}>
+      <CardContent
+        className={cn('pt-4 sm:pt-5', contentClassName)}
+        role="region"
+        aria-labelledby={id}
+      >
         {children}
       </CardContent>
       {footer ? <div className="border-border/70 border-t px-4 py-3 sm:px-5">{footer}</div> : null}

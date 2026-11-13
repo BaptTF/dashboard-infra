@@ -47,6 +47,8 @@ export interface ChartTable {
   rows: ReactNode[][]
   /** Optional total row. Kept separate so a sampled table can still state its real sum. */
   footer?: ReactNode[]
+  /** Optional note under the table, for rounding or sampling caveats. */
+  note?: string
 }
 
 const fallbackPalette = ['#0f766e', '#2563eb', '#b45309', '#b91c1c', '#7e22ce', '#15803d']
@@ -562,6 +564,7 @@ export function Chart({
               ) : null}
             </table>
           </div>
+          {table.note ? <p className="text-muted-foreground mt-1 text-xs">{table.note}</p> : null}
           {tableOverflowing ? (
             <p className="text-muted-foreground mt-1 text-xs">
               Défilement horizontal… La dernière colonne reste visible.

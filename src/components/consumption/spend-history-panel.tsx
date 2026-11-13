@@ -1,5 +1,6 @@
 import type { UseQueryResult } from '@tanstack/react-query'
 import { LineChart, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
 import { Chart, type ChartTable } from '~/components/chart'
 import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
@@ -37,11 +38,25 @@ export function SpendHistoryPanel({
   filterLabel?: string
 }) {
   const data = query.data
-  const series = data
+  const sourceSeries = data
     ? onlyKeys
       ? data.series.filter((entry) => onlyKeys.includes(entry.virtualKey))
       : data.series
     : []
+  const availableKeys = sourceSeries.map((entry) => entry.virtualKey)
+  const scopeKey = onlyKeys?.join('|') ?? ''
+  const focusScope = `${data?.window ?? ''}|${scopeKey}`
+  const [focus, setFocus] = useState<{ scope: string; key: string | null }>({
+    scope: focusScope,
+    key: null,
+  })
+  // Keying the local focus by period+source makes a stale selection fall back
+  // to "all keys" without a state-writing effect.
+  const activeFocus =
+    focus.scope === focusScope && focus.key && availableKeys.includes(focus.key) ? focus.key : null
+  const series = activeFocus
+    ? sourceSeries.filter((entry) => entry.virtualKey === activeFocus)
+    : sourceSeries
   const chartSeries = series.map((entry) => ({
     name: entry.virtualKey,
     points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
@@ -74,6 +89,11 @@ export function SpendHistoryPanel({
     return point && point.timestamp < first ? point.timestamp : first
   }, Number.POSITIVE_INFINITY)
   const firstSample = Number.isFinite(firstSampleAt) ? firstSampleAt * 1000 : null
+  const lastSampleAt = series.reduce((last, entry) => {
+    const point = entry.points[entry.points.length - 1]
+    return point && point.timestamp > last ? point.timestamp : last
+  }, Number.NEGATIVE_INFINITY)
+  const lastSample = Number.isFinite(lastSampleAt) ? lastSampleAt * 1000 : null
   const table: ChartTable = {
     columns: [
       { label: fine ? 'Date/heure UTC' : 'Jour UTC' },
@@ -91,10 +111,13 @@ export function SpendHistoryPanel({
             formatCurrency(curveTotal),
           ]
         : undefined,
+    note: series.length > 0 ? 'Total exact ; les lignes sont arrondies au centime.' : undefined,
   }
   const unitLabel = data ? granularityLabel(data.granularity) : 'jour UTC'
   const detailLabel = data ? granularityDetail(data.granularity) : 'jour UTC'
-  const scope = filterLabel ?? (onlyKeys?.length ? onlyKeys.join(', ') : null)
+  const scope = activeFocus ?? filterLabel ?? (onlyKeys?.length ? onlyKeys.join(', ') : null)
+  const dataKeySuffix = activeFocus ?? (onlyKeys?.length ? onlyKeys.join('-') : null)
+  const totalLabel = activeFocus ? `Total ${activeFocus}` : 'Total courbe'
   const chartStepSeconds = data?.granularity === 'day' ? data.stepSeconds : undefined
 
   return (
@@ -106,14 +129,6 @@ export function SpendHistoryPanel({
         </span>
       }
       description={`${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
-      actions={
-        series.length > 0 ? (
-          <span className="text-muted-foreground text-[11px]">
-            Total courbe : {formatCurrency(curveTotal)} · {series.length} clé
-            {series.length > 1 ? 's' : ''}
-          </span>
-        ) : null
-      }
     >
       {query.isError && data ? (
         <StatusBanner tone="warning" title="Courbe non actualisée" className="mb-4">
@@ -158,6 +173,33 @@ export function SpendHistoryPanel({
         />
       ) : data ? (
         <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            {availableKeys.length > 1 ? (
+              <label className="text-muted-foreground inline-flex min-w-0 items-center gap-1.5 text-xs">
+                <span className="whitespace-nowrap">Clé de la courbe</span>
+                <select
+                  value={activeFocus ?? ''}
+                  onChange={(event) =>
+                    setFocus({ scope: focusScope, key: event.target.value || null })
+                  }
+                  className="border-input bg-background text-foreground focus-visible:ring-ring h-7 max-w-[min(100%,16rem)] min-w-0 rounded-md border px-1.5 text-[11px] focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <option value="">Toutes les clés</option>
+                  {availableKeys.map((key) => (
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span />
+            )}
+            <span className="text-muted-foreground text-[11px]">
+              {totalLabel} : {formatCurrency(curveTotal)} · {series.length} clé
+              {series.length > 1 ? 's' : ''}
+            </span>
+          </div>
           <Chart
             series={chartSeries}
             unit="currency"
@@ -167,7 +209,7 @@ export function SpendHistoryPanel({
             xLabelMode={fine ? 'utc-time' : 'utc-day'}
             table={table}
             stepSeconds={chartStepSeconds}
-            dataKey={`bifrost-${data.window}-${data.granularity}${onlyKeys?.length ? `-${onlyKeys.join('-')}` : ''}`}
+            dataKey={`bifrost-${data.window}-${data.granularity}${dataKeySuffix ? `-${dataKeySuffix}` : ''}`}
             listLegend
             emptyTitle="Aucun point dans cette période"
           />
@@ -184,6 +226,16 @@ export function SpendHistoryPanel({
                   ? fine
                     ? formatUtcDayTime(firstSample)
                     : formatUtcDate(firstSample)
+                  : 'inconnue'}
+              </strong>
+            </span>
+            <span>
+              Dernière mesure UTC :{' '}
+              <strong className="text-foreground font-medium">
+                {lastSample
+                  ? fine
+                    ? formatUtcDayTime(lastSample)
+                    : formatUtcDate(lastSample)
                   : 'inconnue'}
               </strong>
             </span>

@@ -126,6 +126,34 @@ test('the accessible cost table contains every point and sums to the curve total
   expect(parseMoney(await region.locator('tfoot td').nth(2).textContent())).toBeCloseTo(total, 2)
 })
 
+test('the cost chart can focus one key and rescale its Y axis', async ({ page }, testInfo) => {
+  await gotoHydrated(page, '/consommation?window=all&source=all')
+  const chart = page.locator('[data-data-key^="bifrost-all-day"]')
+  await expect(chart).toHaveAttribute('data-stacked', 'false')
+  const initialCount = Number(await chart.getAttribute('data-series-count'))
+  expect(initialCount).toBeGreaterThan(1)
+
+  await page.getByLabel('Clé de la courbe').selectOption('hermes-lea')
+  await expect(chart).toHaveAttribute('data-series-count', '1')
+  await expect(page.getByText(/Total hermes-lea :/)).toBeVisible()
+
+  await page.waitForTimeout(1000)
+  const summary = page
+    .locator('summary', { hasText: 'Voir les données sous forme de tableau' })
+    .first()
+  await summary.scrollIntoViewIfNeeded()
+  if (testInfo.project.name.includes('mobile')) await summary.tap()
+  else await summary.click()
+  const region = page.getByRole('region', { name: /Données du graphique/ }).first()
+  await expect(region).toBeVisible()
+  const keys = await region
+    .locator('tbody tr')
+    .evaluateAll((rows) => [
+      ...new Set(rows.map((row) => row.querySelectorAll('td')[1]?.textContent?.trim() ?? '')),
+    ])
+  expect(keys).toEqual(['hermes-lea'])
+})
+
 test('back and forward resynchronise period and source controls', async ({ page }) => {
   await gotoHydrated(page, '/consommation?window=1m&source=all')
   const oneMonth = page.getByRole('button', { name: 'Mois en cours', exact: true })
