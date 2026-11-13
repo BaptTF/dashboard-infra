@@ -2,6 +2,7 @@ import { Database, Users } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '~/components/data-table'
 import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
+import { Badge } from '~/components/ui/badge'
 import { formatCurrency, formatDecimal, formatTokens, formatTokensExact } from '~/lib/format'
 import {
   buildHermesRows,
@@ -31,6 +32,17 @@ const spendColumns: DataTableColumn<SpendViewRow>[] = [
     cell: (row) => (
       <div>
         <p className="text-sm font-medium break-words">{row.label}</p>
+        {row.kind === 'model' &&
+        row.cost > 0 &&
+        row.tokensIn + row.tokensOut + row.cacheRead === 0 ? (
+          <Badge
+            variant="muted"
+            className="mt-1"
+            title="Coût reconstruit sans compteur de tokens associé"
+          >
+            coût seul
+          </Badge>
+        ) : null}
         <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
           <MobileStat
             label="Entrée"
