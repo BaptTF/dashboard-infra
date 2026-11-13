@@ -468,6 +468,7 @@ export function Chart({
         data-series-count={series.length}
         data-legend-mode={legendMode}
         data-x-label-mode={xLabelMode}
+        data-stacked={stacked ? 'true' : 'false'}
       />
       {legendAsList ? (
         <ul

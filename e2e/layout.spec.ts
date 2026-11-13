@@ -124,6 +124,9 @@ test('cost chart uses UTC fine buckets on desktop and mobile', async ({ page }, 
   const chart = page.locator('[data-data-key="bifrost-1m-hour"]')
   await chart.scrollIntoViewIfNeeded()
   await expect(chart).toHaveAttribute('data-x-label-mode', 'utc-time')
+  // Each key keeps its own value on the Y axis; stacking made a 3 $ peak look
+  // like 500 $ because it sat on top of the other keys.
+  await expect(chart).toHaveAttribute('data-stacked', 'false')
   // Many Bifrost keys cannot fit in the mobile canvas legend: the chart shows
   // a readable DOM legend instead of hiding the colour mapping.
   await expect(chart).toHaveAttribute(

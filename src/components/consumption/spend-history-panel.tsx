@@ -105,7 +105,7 @@ export function SpendHistoryPanel({
           Courbe de coût Bifrost (UTC)
         </span>
       }
-      description={`${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
+      description={`${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
       actions={
         series.length > 0 ? (
           <span className="text-muted-foreground text-[11px]">
@@ -162,10 +162,8 @@ export function SpendHistoryPanel({
             series={chartSeries}
             unit="currency"
             ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel} pour ${windowLabel}`}
-            description={`Courbe empilée des coûts Bifrost par ${unitLabel}, par clé. ${detailLabel}. Totaux identiques à la somme des points.`}
+            description={`Courbe des coûts Bifrost par ${unitLabel}, par clé, sans empilement : chaque série est à sa valeur propre. ${detailLabel}. Totaux identiques à la somme des points.`}
             height={330}
-            stacked
-            area
             xLabelMode={fine ? 'utc-time' : 'utc-day'}
             table={table}
             stepSeconds={chartStepSeconds}
