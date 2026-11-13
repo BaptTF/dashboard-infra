@@ -20,7 +20,7 @@ test('drills from person to provider and model, and keeps period/source in the U
   await expect(page.getByText('Bifrost · entrée', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Bifrost · sortie', { exact: true })).toHaveCount(0)
 
-  const expandPerson = page.getByRole('button', { name: /tailscale-noe/ })
+  const expandPerson = page.getByRole('button', { name: /^(Déplier|Replier) tailscale-noe$/ })
   await expandPerson.scrollIntoViewIfNeeded()
   await expandPerson.click()
   await expect(expandPerson).toHaveAttribute('aria-expanded', 'true')
@@ -126,32 +126,29 @@ test('the accessible cost table contains every point and sums to the curve total
   expect(parseMoney(await region.locator('tfoot td').nth(2).textContent())).toBeCloseTo(total, 2)
 })
 
-test('the cost chart can focus one key and rescale its Y axis', async ({ page }, testInfo) => {
+test('the mobile series legend can hide a key and rescale the chart', async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'DOM legend is the mobile control')
   await gotoHydrated(page, '/consommation?window=all&source=all')
   const chart = page.locator('[data-data-key^="bifrost-all-day"]')
   await expect(chart).toHaveAttribute('data-stacked', 'false')
-  const initialCount = Number(await chart.getAttribute('data-series-count'))
-  expect(initialCount).toBeGreaterThan(1)
+  await expect(chart).toHaveAttribute('data-hidden-series', '')
 
-  await page.getByLabel('Clé de la courbe').selectOption('hermes-lea')
-  await expect(chart).toHaveAttribute('data-series-count', '1')
-  await expect(page.getByText(/Total hermes-lea :/)).toBeVisible()
+  const hide = page.getByRole('button', { name: 'Masquer hermes-lea' })
+  await expect(hide).toBeVisible()
+  await hide.click()
+  const show = page.getByRole('button', { name: 'Afficher hermes-lea' })
+  await expect(show).toBeVisible()
+  await expect(show).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-hidden-series', 'hermes-lea')
 
-  await page.waitForTimeout(1000)
-  const summary = page
-    .locator('summary', { hasText: 'Voir les données sous forme de tableau' })
-    .first()
-  await summary.scrollIntoViewIfNeeded()
-  if (testInfo.project.name.includes('mobile')) await summary.tap()
-  else await summary.click()
-  const region = page.getByRole('region', { name: /Données du graphique/ }).first()
-  await expect(region).toBeVisible()
-  const keys = await region
-    .locator('tbody tr')
-    .evaluateAll((rows) => [
-      ...new Set(rows.map((row) => row.querySelectorAll('td')[1]?.textContent?.trim() ?? '')),
-    ])
-  expect(keys).toEqual(['hermes-lea'])
+  await show.click()
+  await expect(chart).toHaveAttribute('data-hidden-series', '')
+  await expect(page.getByRole('button', { name: 'Masquer hermes-lea' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
 })
 
 test('back and forward resynchronise period and source controls', async ({ page }) => {

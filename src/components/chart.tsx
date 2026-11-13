@@ -52,6 +52,7 @@ export interface ChartTable {
 }
 
 const fallbackPalette = ['#0f766e', '#2563eb', '#b45309', '#b91c1c', '#7e22ce', '#15803d']
+const EMPTY_HIDDEN: string[] = []
 
 function readColors() {
   if (typeof window === 'undefined') {
@@ -143,6 +144,19 @@ export function Chart({
   const [narrow, setNarrow] = useState(false)
   const [tableOpen, setTableOpen] = useState(false)
   const [tableOverflowing, setTableOverflowing] = useState(false)
+  const [legendState, setLegendState] = useState<{ key: string; hidden: string[] }>({
+    key: dataKey,
+    hidden: [],
+  })
+  const hiddenSeries = legendState.key === dataKey ? legendState.hidden : EMPTY_HIDDEN
+  const hiddenKey = hiddenSeries.join('\u0000')
+  const toggleSeries = (name: string) => {
+    setLegendState((current) => {
+      const base = current.key === dataKey ? current.hidden : EMPTY_HIDDEN
+      const hidden = base.includes(name) ? base.filter((entry) => entry !== name) : [...base, name]
+      return { key: dataKey, hidden }
+    })
+  }
   const tableScroll = useRef<HTMLDivElement>(null)
   const descriptionId = useId()
   const hasData = series.some((entry) => seriesHasValue(entry.points))
@@ -225,9 +239,12 @@ export function Chart({
         containLabel: true,
       },
       legend: {
-        // Small mobile legends wrap on several lines; large histories hide the
-        // canvas legend in favour of the accessible table below.
+        // Small mobile legends wrap on several lines; large histories use the
+        // interactive DOM legend below instead of a clipped canvas legend.
         show: legendVisible,
+        selected: Object.fromEntries(
+          series.map((entry) => [entry.name, !hiddenSeries.includes(entry.name)]),
+        ),
         type: narrow ? 'plain' : 'scroll',
         top: 0,
         left: 0,
@@ -405,6 +422,22 @@ export function Chart({
     }
     instance.on('datazoom', onZoom)
 
+    const onLegendChange = (event: unknown) => {
+      if (typeof event !== 'object' || event === null) return
+      const selected = (event as { selected?: unknown }).selected
+      if (typeof selected !== 'object' || selected === null) return
+      const hidden = Object.entries(selected as Record<string, boolean>)
+        .filter(([, visible]) => !visible)
+        .map(([name]) => name)
+      setLegendState((current) => {
+        if (current.key === dataKey && current.hidden.join('\u0000') === hidden.join('\u0000')) {
+          return current
+        }
+        return { key: dataKey, hidden }
+      })
+    }
+    instance.on('legendselectchanged', onLegendChange)
+
     const observer =
       typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => instance.resize()) : null
     if (observer && container.current) observer.observe(container.current)
@@ -414,6 +447,7 @@ export function Chart({
       observer?.disconnect()
       window.removeEventListener('resize', onResize)
       instance.off('datazoom', onZoom)
+      instance.off('legendselectchanged', onLegendChange)
     }
   }, [
     ariaLabel,
@@ -421,6 +455,7 @@ export function Chart({
     dataKey,
     description,
     hasData,
+    hiddenSeries,
     legendVisible,
     narrow,
     reducedMotion,
@@ -471,22 +506,41 @@ export function Chart({
         data-legend-mode={legendMode}
         data-x-label-mode={xLabelMode}
         data-stacked={stacked ? 'true' : 'false'}
+        data-hidden-series={hiddenKey}
       />
       {legendAsList ? (
         <ul
           className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]"
           aria-label="Légende des séries"
         >
-          {series.map((entry, index) => (
-            <li key={entry.name} className="inline-flex items-center gap-1.5">
-              <span
-                className="size-2 shrink-0 rounded-sm"
-                style={{ backgroundColor: `var(--chart-${(index % 6) + 1})` }}
-                aria-hidden="true"
-              />
-              <span className="text-muted-foreground">{entry.name}</span>
-            </li>
-          ))}
+          {series.map((entry, index) => {
+            const hidden = hiddenSeries.includes(entry.name)
+            return (
+              <li key={entry.name}>
+                <button
+                  type="button"
+                  aria-pressed={!hidden}
+                  aria-label={hidden ? `Afficher ${entry.name}` : `Masquer ${entry.name}`}
+                  title={hidden ? `Afficher ${entry.name}` : `Masquer ${entry.name}`}
+                  onClick={() => toggleSeries(entry.name)}
+                  className={`focus-visible:ring-ring inline-flex min-h-6 items-center gap-1.5 rounded px-0.5 text-left transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none ${hidden ? 'opacity-45' : ''}`}
+                >
+                  <span
+                    className="size-2 shrink-0 rounded-sm"
+                    style={{ backgroundColor: `var(--chart-${(index % 6) + 1})` }}
+                    aria-hidden="true"
+                  />
+                  <span
+                    className={
+                      hidden ? 'text-muted-foreground line-through' : 'text-muted-foreground'
+                    }
+                  >
+                    {entry.name}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
         </ul>
       ) : null}
       {table ? (
