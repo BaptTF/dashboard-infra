@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { gotoHydrated } from './utils'
 
 test('an empty Prometheus renders an honest empty state without backfill', async ({ page }) => {
-  await gotoHydrated(page, 'http://127.0.0.1:3101/?window=monthly&history=30d')
+  await gotoHydrated(page, 'http://127.0.0.1:3101/?window=monthly&history=1m')
   await expect(page.getByRole('heading', { level: 1, name: 'Abonnements' })).toBeVisible()
   await expect(page.getByText('Aucune métrique reçue')).toBeVisible()
   // No quota series at all: the empty state says collection has not started.
@@ -15,7 +15,7 @@ test('an empty Prometheus renders an honest empty state without backfill', async
   await expect(page.getByText(/Collecte à l’instant|Collecte à l'instant/)).toHaveCount(0)
 
   // An empty daily window is not the same as a collection that has not started.
-  await gotoHydrated(page, 'http://127.0.0.1:3101/?window=daily&history=30d')
+  await gotoHydrated(page, 'http://127.0.0.1:3101/?window=daily&history=1m')
   await expect(page.getByText('Aucune série quotidienne exportée')).toBeVisible()
 
   await apiEmptyConsumption(page)

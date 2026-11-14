@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { gotoHydrated } from './utils'
 
 test('a total refresh failure keeps the previous data and says so', async ({ page }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   await expect(page.getByText('Maillon faible')).toBeVisible()
   await expect(page.getByText('main-01', { exact: true }).first()).toBeVisible()
   // Idle live region never claims success.

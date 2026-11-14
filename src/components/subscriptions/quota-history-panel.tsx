@@ -1,5 +1,6 @@
 import type { UseQueryResult } from '@tanstack/react-query'
-import { CalendarClock, RotateCcw } from 'lucide-react'
+import { CalendarClock, ListFilter, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
 import { Chart, type ChartTable } from '~/components/chart'
 import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
@@ -18,12 +19,6 @@ const windowOptions = [
   { value: 'weekly', label: 'Hebdo' },
   { value: 'daily', label: 'Quotidien' },
   { value: 'rolling', label: 'Glissant' },
-] as const
-
-const rangeOptions = [
-  { value: '7d', label: '7 j' },
-  { value: '30d', label: '30 j' },
-  { value: '90d', label: '90 j' },
 ] as const
 
 function downsample(points: MetricPoint[], maxPoints = 30): MetricPoint[] {
@@ -51,12 +46,20 @@ export function QuotaHistoryPanel({
   /** Distinguishes "no daily series exported" from "not collected yet". */
   hasQuotaForWindow?: boolean
 }) {
+  const [showDetails, setShowDetails] = useState(false)
   const data = query.data
   // The server already merges exact duplicates; doing it again protects the
   // client from placeholder payloads and keeps the legend count stable.
-  const series = data ? mergeQuotaHistorySeries(data.series) : []
+  const allSeries = data ? mergeQuotaHistorySeries(data.series) : []
+  const hasDetailSeries = allSeries.some((entry) => entry.quota !== 'total')
+  const withDetails = showDetails || !hasDetailSeries
+  // Default view: one total per key. The included/API/on-demand breakdown is
+  // opt-in, which keeps the chart and its mobile legend readable.
+  const series = withDetails ? allSeries : allSeries.filter((entry) => entry.quota === 'total')
   const chartSeries = series.map((entry) => ({
-    name: `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)} · ${quotaLabel(entry.quota)}`,
+    name: `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)}${
+      withDetails ? ` · ${quotaLabel(entry.quota)}` : ''
+    }`,
     points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
   }))
   const thresholds = sharedQuotaThresholds(
@@ -103,11 +106,14 @@ export function QuotaHistoryPanel({
       ? 'Aucune série de quota n’est exportée pour cette fenêtre. Aucun historique synthétique n’est fabriqué.'
       : 'Aucun point n’a encore été collecté pour cette fenêtre. Aucun historique synthétique n’est fabriqué : la courbe démarrera au premier scrape.'
 
-  const description = thresholdPercent
+  const baseDescription = thresholdPercent
     ? `Consommation observée dans Prometheus. Repères à ${thresholdPercent} pour cette fenêtre. Les trous de collecte restent visibles.`
     : series.length > 0
       ? 'Consommation observée dans Prometheus. Plusieurs grilles de repères coexistent : les seuils sont masqués pour ne pas induire en erreur. Les trous de collecte restent visibles.'
       : 'Consommation observée dans Prometheus. La courbe commence à la première série collectée, jamais avant.'
+  const description = `${baseDescription} ${
+    withDetails ? 'Tous les quotas sont affichés.' : 'Totaux par clé affichés par défaut.'
+  }`
 
   return (
     <Panel
@@ -122,13 +128,17 @@ export function QuotaHistoryPanel({
             label="Fenêtre de quota"
             size="sm"
           />
-          <TimeRangePicker
-            param="history"
-            value={range}
-            options={rangeOptions}
-            label="Profondeur d’historique"
-            size="sm"
-          />
+          {hasDetailSeries ? (
+            <Button
+              variant={showDetails ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={showDetails}
+              onClick={() => setShowDetails((current) => !current)}
+            >
+              <ListFilter aria-hidden="true" />
+              Détails des quotas
+            </Button>
+          ) : null}
         </>
       }
     >
@@ -178,7 +188,8 @@ export function QuotaHistoryPanel({
             xLabelMode="time"
             table={table}
             stepSeconds={data.stepSeconds}
-            dataKey={`quotas-${window}-${range}`}
+            dataKey={`quotas-${window}-${range}-${withDetails ? 'details' : 'totals'}`}
+            listLegend
             emptyTitle="Aucun point dans cette fenêtre"
           />
           {pointCount === 1 ? (

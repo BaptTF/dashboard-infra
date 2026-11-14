@@ -4,7 +4,7 @@ import { gotoHydrated } from './utils'
 test('compact subscriptions page keeps weakest link, real quotas and OpenCode weights', async ({
   page,
 }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   await expect(page.getByRole('heading', { level: 1, name: 'Abonnements' })).toBeVisible()
   await expect(page.getByText('Maillon faible')).toBeVisible()
   await expect(page.getByRole('heading', { name: /OpenCode/ }).first()).toBeVisible()
@@ -45,7 +45,7 @@ test('compact subscriptions page keeps weakest link, real quotas and OpenCode we
 test('open_code subscription collection is per subscription, never the first one', async ({
   page,
 }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   const failing = page.locator('[data-subscription="r"]')
   const healthy = page.locator('[data-subscription="main"]')
   await expect(failing).toHaveAttribute('data-collection', 'failure')
@@ -59,19 +59,19 @@ test('open_code subscription collection is per subscription, never the first one
 test('history controls live in the URL, use aria-pressed and survive a refresh', async ({
   page,
 }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   const weekly = page.getByRole('button', { name: 'Hebdo', exact: true })
   await weekly.click()
   await expect(page).toHaveURL(/window=weekly/)
   await expect(weekly).toHaveAttribute('aria-pressed', 'true')
-  const range = page.getByRole('button', { name: '7 j', exact: true })
+  const range = page.getByRole('button', { name: '3 mois', exact: true })
   await range.click()
-  await expect(page).toHaveURL(/history=7d/)
+  await expect(page).toHaveURL(/history=3m/)
   await expect(range).toHaveAttribute('aria-pressed', 'true')
   await page.reload()
   await expect(page.getByRole('heading', { level: 1, name: 'Abonnements' })).toBeVisible()
   await expect(page).toHaveURL(/window=weekly/)
-  await expect(page).toHaveURL(/history=7d/)
+  await expect(page).toHaveURL(/history=3m/)
   await expect(page.getByRole('button', { name: 'Hebdo', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -79,34 +79,34 @@ test('history controls live in the URL, use aria-pressed and survive a refresh',
 })
 
 test('re-clicking the active tab keeps the selected filters', async ({ page }) => {
-  await gotoHydrated(page, '/?window=weekly&history=7d')
+  await gotoHydrated(page, '/?window=weekly&history=3m')
   await page.getByRole('link', { name: 'Abonnements', exact: true }).click()
   await expect(page).toHaveURL(/window=weekly/)
-  await expect(page).toHaveURL(/history=7d/)
+  await expect(page).toHaveURL(/history=3m/)
 })
 
 test('back and forward resynchronise quota window and history range', async ({ page }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   const weekly = page.getByRole('button', { name: 'Hebdo', exact: true })
   const monthly = page.getByRole('button', { name: 'Mensuel', exact: true })
-  const range7 = page.getByRole('button', { name: '7 j', exact: true })
-  const range30 = page.getByRole('button', { name: '30 j', exact: true })
+  const rangeMonth = page.getByRole('button', { name: 'Mois en cours', exact: true })
+  const range3m = page.getByRole('button', { name: '3 mois', exact: true })
 
   await weekly.click()
   await expect(weekly).toHaveAttribute('aria-pressed', 'true')
-  await range7.click()
-  await expect(range7).toHaveAttribute('aria-pressed', 'true')
+  await range3m.click()
+  await expect(range3m).toHaveAttribute('aria-pressed', 'true')
 
   await page.goBack()
   await expect(page).toHaveURL(/window=weekly/)
-  await expect(page).toHaveURL(/history=30d/)
+  await expect(page).toHaveURL(/history=1m/)
   await expect(weekly).toHaveAttribute('aria-pressed', 'true')
-  await expect(range30).toHaveAttribute('aria-pressed', 'true')
-  await expect(range7).toHaveAttribute('aria-pressed', 'false')
+  await expect(rangeMonth).toHaveAttribute('aria-pressed', 'true')
+  await expect(range3m).toHaveAttribute('aria-pressed', 'false')
 
   await page.goForward()
-  await expect(page).toHaveURL(/history=7d/)
-  await expect(range7).toHaveAttribute('aria-pressed', 'true')
+  await expect(page).toHaveURL(/history=3m/)
+  await expect(range3m).toHaveAttribute('aria-pressed', 'true')
 
   await monthly.click()
   await expect(monthly).toHaveAttribute('aria-pressed', 'true')
@@ -116,11 +116,17 @@ test('back and forward resynchronise quota window and history range', async ({ p
 })
 
 test('history merges exact duplicates and keeps readable current labels', async ({ page }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
-  // OpenCode main/r/a/n + Cursor default's four monthly quota kinds = 8 series.
-  const chart = page.locator('[data-data-key="quotas-monthly-30d"]')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
+  // Totals by key by default: OpenCode main/r/a/n + Cursor default = 5 series.
+  const chart = page.locator('[data-data-key^="quotas-monthly-1m-"]')
   await chart.scrollIntoViewIfNeeded()
+  await expect(chart).toHaveAttribute('data-series-count', '5')
+  const details = page.getByRole('button', { name: 'Détails des quotas' })
+  await details.click()
+  await expect(details).toHaveAttribute('aria-pressed', 'true')
   await expect(chart).toHaveAttribute('data-series-count', '8')
+  await details.click()
+  await expect(chart).toHaveAttribute('data-series-count', '5')
   // Mixed OpenCode 80/95 and Cursor 70/90 grids hide the misleading markers.
   await expect(page.getByText(/Plusieurs grilles de repères coexistent/).first()).toBeVisible()
   await expect(page.getByText('Fin de période')).toHaveCount(0)

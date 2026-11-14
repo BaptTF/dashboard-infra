@@ -178,7 +178,7 @@ test('mobile header shows a short freshness label and aligned KPI titles', async
   // where one OpenCode subscription deliberately fails.
   await gotoHydrated(page, '/consommation?window=1m&source=all')
   await expect(page.locator('header').getByText(/^À jour(?: · .+)?$/)).toBeVisible()
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   const title = page.getByText('Maillon faible', { exact: true })
   const minHeight = await title.evaluate((element) => getComputedStyle(element).minHeight)
   expect(minHeight).not.toBe('0px')
@@ -189,11 +189,13 @@ test('mobile history uses compact dates instead of four-line timestamps', async 
 }, testInfo) => {
   test.skip(!testInfo.project.name.includes('mobile'), 'mobile history scenario')
   await page.setViewportSize({ width: 390, height: 844 })
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   // The large quota history hides the canvas legend; the table is the fallback.
-  const chart = page.locator('[data-data-key="quotas-monthly-30d"]')
+  const chart = page.locator('[data-data-key="quotas-monthly-1m-totals"]')
   await chart.scrollIntoViewIfNeeded()
-  await expect(chart).toHaveAttribute('data-legend-mode', 'hidden')
+  await expect(chart).toHaveAttribute('data-legend-mode', 'list')
+  await expect(page.getByRole('list', { name: 'Légende des séries' })).toBeVisible()
+  await page.waitForTimeout(300)
   await page.getByText('Voir les données sous forme de tableau').first().click()
   const table = page.getByRole('region', { name: /Données du graphique/ }).first()
   await expect(table).toBeVisible()
@@ -223,7 +225,7 @@ test('mobile history uses compact dates instead of four-line timestamps', async 
 
 test('history panel header and filters wrap on a narrow viewport', async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes('mobile'), 'mobile layout scenario')
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   const heading = page.getByRole('heading', { name: 'Historique des quotas' })
   await heading.scrollIntoViewIfNeeded()
   await expect(heading).toBeVisible()
@@ -240,8 +242,8 @@ test('dataZoom survives a refresh of the same period and resets on a window chan
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'wheel zoom is a desktop interaction')
-  await gotoHydrated(page, '/?window=monthly&history=30d')
-  const chart = page.locator('[data-data-key="quotas-monthly-30d"]')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
+  const chart = page.locator('[data-data-key="quotas-monthly-1m-totals"]')
   await chart.scrollIntoViewIfNeeded()
   // Let ECharts finish its first animation before interacting with the slider.
   await page.waitForTimeout(900)
@@ -266,13 +268,13 @@ test('dataZoom survives a refresh of the same period and resets on a window chan
   await expect.poll(() => chart.getAttribute('data-zoom')).toBe(zoom)
 
   await page.getByRole('button', { name: 'Hebdo', exact: true }).click()
-  const weeklyChart = page.locator('[data-data-key="quotas-weekly-30d"]')
+  const weeklyChart = page.locator('[data-data-key="quotas-weekly-1m-totals"]')
   await expect(weeklyChart).toBeVisible()
   await expect(weeklyChart).not.toHaveAttribute('data-zoom', /.+/)
 })
 
 test('the skip link moves focus to the main content', async ({ page }) => {
-  await gotoHydrated(page, '/?window=monthly&history=30d')
+  await gotoHydrated(page, '/?window=monthly&history=1m')
   await page.bringToFront()
   await page.keyboard.press('Tab')
   const skip = page.getByRole('link', { name: 'Aller au contenu' })

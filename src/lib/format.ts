@@ -1,4 +1,4 @@
-import { relativeTime } from './dates'
+import { relativeTime, spendWindowLabel } from './dates'
 import type { HistoryRange } from './types'
 import { clamp } from './utils'
 
@@ -112,7 +112,7 @@ export function quotaLabel(quota: string): string {
 }
 
 export function historyRangeLabel(range: HistoryRange): string {
-  return range === '7d' ? '7 jours' : range === '90d' ? '90 jours' : '30 jours'
+  return spendWindowLabel(range)
 }
 
 /**

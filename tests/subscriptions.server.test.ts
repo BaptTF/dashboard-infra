@@ -99,17 +99,12 @@ describe('quota history windows', () => {
       },
     })
 
-    const rolling = await fetchQuotaHistory(
-      client,
-      config,
-      { window: 'rolling', range: '30d' },
-      now,
-    )
+    const rolling = await fetchQuotaHistory(client, config, { window: 'rolling', range: '3m' }, now)
     expect(calls[0]).toBe('ai_usage_quota_used_ratio{window="rolling_5h"}')
     expect(rolling.series.map((series) => series.window).sort()).toEqual(['daily', 'rolling'])
     expect(rolling.firstSampleAt).not.toBeNull()
 
-    const daily = await fetchQuotaHistory(client, config, { window: 'daily', range: '7d' }, now)
+    const daily = await fetchQuotaHistory(client, config, { window: 'daily', range: '1m' }, now)
     expect(calls[1]).toBe('ai_usage_quota_used_ratio{window="daily"}')
     expect(daily.series.map((series) => series.window).sort()).toEqual(['daily', 'rolling'])
   })

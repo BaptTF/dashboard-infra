@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { gotoHydrated } from './utils'
 
 for (const [path, heading] of [
-  ['/?window=monthly&history=30d', 'Abonnements'],
+  ['/?window=monthly&history=1m', 'Abonnements'],
   ['/consommation?window=1m&source=all', 'Consommation'],
 ] as const) {
   test(`WCAG AA — ${heading}`, async ({ page }) => {

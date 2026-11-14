@@ -1,5 +1,6 @@
 export type QuotaWindow = 'monthly' | 'weekly' | 'rolling' | 'daily'
-export type HistoryRange = '7d' | '30d' | '90d'
+/** Same calendar vocabulary as the consumption page. */
+export type HistoryRange = SpendWindow
 export type SpendWindow = '1m' | '3m' | '6m' | '1y' | 'all'
 export type SpendGranularity = 'hour' | '6h' | '12h' | 'day'
 export type Severity = 0 | 1 | 2

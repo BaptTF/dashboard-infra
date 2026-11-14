@@ -5,7 +5,7 @@ import type { SpendSource } from '~/lib/spend-view'
 import { cn } from '~/lib/utils'
 
 const defaults = {
-  '/': { window: 'monthly', history: '30d' },
+  '/': { window: 'monthly', history: '1m' },
   '/consommation': { window: '1m', source: 'all' },
 } as const
 

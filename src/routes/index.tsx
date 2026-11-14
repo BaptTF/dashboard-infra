@@ -11,8 +11,10 @@ import { ProviderCard } from '~/components/subscriptions/provider-card'
 import { QuotaHistoryPanel } from '~/components/subscriptions/quota-history-panel'
 import { SubscriptionSummary } from '~/components/subscriptions/subscription-summary'
 import { Badge } from '~/components/ui/badge'
+import { TimeRangePicker } from '~/components/time-range-picker'
 import { UpdateIndicator } from '~/components/update-indicator'
 import { normalizeHistoryRange, normalizeQuotaWindow } from '~/lib/dates'
+import { PERIOD_OPTIONS } from '~/lib/period-options'
 import { aggregateCollectionStatuses, collectionLevel, groupOverview } from '~/lib/providers'
 import { quotaHistoryQueryOptions, subscriptionOverviewQueryOptions } from '~/lib/queries'
 import type { HistoryRange, QuotaWindow } from '~/lib/types'
@@ -84,6 +86,12 @@ function SubscriptionsPage() {
               Mode démonstration
             </Badge>
           ) : null}
+          <TimeRangePicker
+            param="history"
+            value={search.history}
+            options={PERIOD_OPTIONS}
+            label="Période calendaire"
+          />
           <UpdateIndicator active={overviewQuery.isFetching || historyQuery.isFetching} />
         </>
       }

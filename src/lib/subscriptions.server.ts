@@ -145,12 +145,14 @@ export async function fetchSubscriptionsOverview(
 
 export function historyStepSeconds(range: HistoryRange): number {
   switch (range) {
-    case '7d':
-      return 15 * 60
-    case '90d':
-      return 3 * 60 * 60
-    default:
+    case '1m':
       return 60 * 60
+    case '3m':
+      return 6 * 60 * 60
+    case '6m':
+      return 12 * 60 * 60
+    default:
+      return 24 * 60 * 60
   }
 }
 

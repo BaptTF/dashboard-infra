@@ -78,14 +78,16 @@ describe('Europe/Paris calendar windows', () => {
     expect(normalizeQuotaWindow('rolling_5h')).toBe('rolling')
     expect(normalizeQuotaWindow('rolling')).toBe('rolling')
     expect(normalizeQuotaWindow('nope')).toBe('monthly')
-    expect(normalizeHistoryRange('90d')).toBe('90d')
+    expect(normalizeHistoryRange('3m')).toBe('3m')
+    // Legacy links still land on a valid professional period.
+    expect(normalizeHistoryRange('90d')).toBe('1m')
     expect(QUOTA_WINDOWS).toEqual(['monthly', 'weekly', 'daily', 'rolling'])
     expect(quotaWindowLabel('daily')).toBe('Quotidien')
     expect(quotaWindowLabel('rolling')).toBe('Glissant')
     expect(quotaWindowHint('daily')).toContain('24 h')
     expect(quotaWindowHint('rolling')).toContain('glissante')
-    expect(historyRangeStart(new Date('2026-11-11T00:00:00Z'), '7d').toISOString()).toBe(
-      '2026-11-04T00:00:00.000Z',
+    expect(historyRangeStart(new Date('2026-11-11T00:00:00Z'), '1m').toISOString()).toBe(
+      '2026-10-31T23:00:00.000Z',
     )
   })
 

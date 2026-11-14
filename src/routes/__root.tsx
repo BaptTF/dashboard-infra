@@ -156,7 +156,7 @@ function NotFound() {
       </p>
       <Link
         to="/"
-        search={{ window: 'monthly', history: '30d' }}
+        search={{ window: 'monthly', history: '1m' }}
         className="bg-primary text-primary-foreground focus-visible:ring-ring mt-6 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium focus-visible:ring-2 focus-visible:outline-none"
       >
         Revenir aux abonnements

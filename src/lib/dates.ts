@@ -3,7 +3,7 @@ import type { HistoryRange, QuotaWindow, SpendWindow } from './types'
 export const PARIS_TIME_ZONE = 'Europe/Paris'
 
 export const SPEND_WINDOWS: readonly SpendWindow[] = ['1m', '3m', '6m', '1y', 'all']
-export const HISTORY_RANGES: readonly HistoryRange[] = ['7d', '30d', '90d']
+export const HISTORY_RANGES: readonly HistoryRange[] = ['1m', '3m', '6m', '1y', 'all']
 export const QUOTA_WINDOWS: readonly QuotaWindow[] = ['monthly', 'weekly', 'daily', 'rolling']
 
 const frenchDate = new Intl.DateTimeFormat('fr-FR', {
@@ -166,7 +166,7 @@ export function normalizeSpendWindow(value: string | undefined): SpendWindow {
 }
 
 export function normalizeHistoryRange(value: string | undefined): HistoryRange {
-  return value === '7d' || value === '90d' ? value : '30d'
+  return normalizeSpendWindow(value)
 }
 
 export function normalizeQuotaWindow(value: string | undefined): QuotaWindow {
@@ -203,8 +203,7 @@ export function windowBounds(now: Date, id: SpendWindow): WindowBounds {
 }
 
 export function historyRangeStart(now: Date, range: HistoryRange): Date {
-  const days = range === '7d' ? 7 : range === '90d' ? 90 : 30
-  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+  return windowBounds(now, range).from
 }
 
 export function quotaWindowLabel(window: QuotaWindow): string {

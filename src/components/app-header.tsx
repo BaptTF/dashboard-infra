@@ -20,7 +20,7 @@ export function AppHeader() {
       <div className="mx-auto flex min-h-14 w-full max-w-[1500px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:px-6 lg:flex-nowrap">
         <Link
           to="/"
-          search={pathname === '/' ? quotaSearch : { window: 'monthly', history: '30d' }}
+          search={pathname === '/' ? quotaSearch : { window: 'monthly', history: '1m' }}
           className={cn(
             'group focus-visible:ring-ring flex shrink-0 items-center gap-2.5 rounded-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
           )}

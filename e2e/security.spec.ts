@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('Prometheus configuration stays server-only and the CSP blocks direct access', async ({
   request,
 }) => {
-  const response = await request.get('/?window=monthly&history=30d')
+  const response = await request.get('/?window=monthly&history=1m')
   expect(response.status()).toBe(200)
   const html = await response.text()
   expect(html).not.toContain('127.0.0.1:9090')

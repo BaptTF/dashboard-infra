@@ -7,7 +7,7 @@ import type { QuotaHistory, SubscriptionsOverview } from '~/lib/types'
 
 const historyInput = z.object({
   window: z.enum(['monthly', 'weekly', 'rolling', 'daily']).catch('monthly'),
-  range: z.enum(['7d', '30d', '90d']).catch('30d'),
+  range: z.enum(['1m', '3m', '6m', '1y', 'all']).catch('1m'),
 })
 
 function noStore() {

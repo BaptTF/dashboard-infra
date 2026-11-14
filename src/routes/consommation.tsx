@@ -14,6 +14,7 @@ import { BifrostTable, HermesTable } from '~/components/consumption/spend-tables
 import { SourceNotes } from '~/components/consumption/source-notes'
 import { UpdateIndicator } from '~/components/update-indicator'
 import { normalizeSpendWindow, spendWindowLabel } from '~/lib/dates'
+import { PERIOD_OPTIONS } from '~/lib/period-options'
 import { consumptionHistoryQueryOptions, consumptionReportQueryOptions } from '~/lib/queries'
 import {
   includesAgent,
@@ -51,18 +52,6 @@ export const Route = createFileRoute('/consommation')({
   }),
   component: ConsumptionPage,
 })
-
-const windowOptions = [
-  { value: '1m', label: 'Mois en cours' },
-  { value: '3m', label: '3 mois' },
-  { value: '6m', label: '6 mois' },
-  { value: '1y', label: '1 an' },
-  {
-    value: 'all',
-    label: 'Depuis le début',
-    title: 'Au maximum deux ans, depuis la première donnée',
-  },
-] as const
 
 const sourceOptions = [
   { value: 'all', label: 'Tout' },
@@ -102,7 +91,7 @@ function ConsumptionPage() {
           <TimeRangePicker
             param="window"
             value={search.window}
-            options={windowOptions}
+            options={PERIOD_OPTIONS}
             label="Période calendaire"
           />
           <UpdateIndicator active={reportQuery.isFetching || historyQuery.isFetching} />
