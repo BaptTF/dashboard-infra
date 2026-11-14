@@ -86,6 +86,11 @@ const CURSOR_SUBSCRIPTION_LABELS: Record<string, string> = {
   b_student: 'B Student',
 }
 
+const DEVIN_SUBSCRIPTION_LABELS: Record<string, string> = {
+  b: 'B',
+  r: 'R',
+}
+
 /**
  * Display-only humanisation of the labels currently published by the exporter.
  * Raw Prometheus labels are never rewritten: an unknown subscription is shown
@@ -104,7 +109,10 @@ export function subscriptionDisplayName(
   if (slug === 'cursor') {
     return CURSOR_SUBSCRIPTION_LABELS[trimmed.toLowerCase()] ?? trimmed
   }
-  if (slug === 'devin' && trimmed.toLowerCase() === 'default') return 'Compte principal'
+  if (slug === 'devin') {
+    if (trimmed.toLowerCase() === 'default') return 'Compte principal'
+    return DEVIN_SUBSCRIPTION_LABELS[trimmed.toLowerCase()] ?? trimmed
+  }
   return trimmed
 }
 

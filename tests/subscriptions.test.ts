@@ -611,6 +611,8 @@ describe('current subscription labels and history deduplication', () => {
     expect(subscriptionDisplayName('cursor', 'b_personal')).toBe('B Personal')
     expect(subscriptionDisplayName('cursor', 'b_student')).toBe('B Student')
     expect(subscriptionDisplayName('devin', 'default')).toBe('Compte principal')
+    expect(subscriptionDisplayName('devin', 'b')).toBe('B')
+    expect(subscriptionDisplayName('devin', 'r')).toBe('R')
     expect(subscriptionDisplayName('opencode', 'inconnu')).toBe('inconnu')
   })
 
