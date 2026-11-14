@@ -145,6 +145,11 @@ function SubscriptionCard({
   const StatusIcon = status.Icon
   const totalAcu = subscription.acu.find((acu) => acu.product === 'all')
   const otherAcu = subscription.acu.filter((acu) => acu.product !== 'all')
+  // Total, included and API share one monthly billing cycle. Keep the exact
+  // reset once, on the first monthly row, instead of repeating it three times.
+  const monthlyResetQuota = subscription.quotas.find(
+    (quota) => quota.window === 'monthly' && quota.resetAt != null,
+  )?.quota
 
   return (
     <div
@@ -192,7 +197,11 @@ function SubscriptionCard({
               elapsedRatio={quota.elapsedRatio}
               severity={quota.severity}
               dryDays={quota.dryDays}
-              resetAt={quota.resetAt}
+              resetAt={
+                quota.window === 'monthly' && quota.quota !== monthlyResetQuota
+                  ? null
+                  : quota.resetAt
+              }
               provider={subscription.provider}
             />
           ))}

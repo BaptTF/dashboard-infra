@@ -249,6 +249,7 @@ export function groupOverview(overview: SubscriptionsOverview): ProviderGroup[] 
       subscription.quotas.sort(
         (a, b) =>
           QUOTA_WINDOW_ORDER.indexOf(a.window) - QUOTA_WINDOW_ORDER.indexOf(b.window) ||
+          quotaOrder(a.quota) - quotaOrder(b.quota) ||
           a.quota.localeCompare(b.quota, 'fr'),
       )
       subscription.weights.sort((a, b) => b.weight - a.weight || a.key.localeCompare(b.key, 'fr'))
@@ -261,6 +262,14 @@ export function groupOverview(overview: SubscriptionsOverview): ProviderGroup[] 
 }
 
 export const QUOTA_WINDOW_ORDER: readonly QuotaWindow[] = ['monthly', 'weekly', 'daily', 'rolling']
+
+/** Business order inside one window: total, then its breakdown, then extras. */
+const QUOTA_ORDER = ['total', 'included', 'api', 'on_demand', 'grok'] as const
+
+function quotaOrder(quota: string): number {
+  const index = QUOTA_ORDER.indexOf(quota as (typeof QUOTA_ORDER)[number])
+  return index === -1 ? QUOTA_ORDER.length : index
+}
 
 export interface WeakestQuota {
   quota: SubscriptionQuota

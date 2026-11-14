@@ -297,6 +297,28 @@ describe('subscription transformations', () => {
 })
 
 describe('normalized provider/subscription join', () => {
+  it('orders monthly quotas total, included, api, on_demand', () => {
+    const quotas = ['api', 'included', 'on_demand', 'total'].map((quota) => ({
+      provider: 'cursor',
+      subscription: 'r_personal',
+      window: 'monthly' as const,
+      quota,
+      usedRatio: 0,
+      resetAt: now / 1000 + 3600,
+      elapsedRatio: null,
+      dryDays: null,
+      severity: 0 as const,
+    }))
+    const groups = groupOverview(overviewWith({ quotas }))
+    const cursor = groups.find((group) => group.slug === 'cursor')
+    expect(cursor?.subscriptions[0]?.quotas.map((quota) => quota.quota)).toEqual([
+      'total',
+      'included',
+      'api',
+      'on_demand',
+    ])
+  })
+
   it('joins opencode with opencode-go and main with Main', () => {
     expect(subscriptionJoinKey('opencode', 'main')).toBe(subscriptionJoinKey('opencode-go', 'Main'))
     expect(subscriptionJoinKey('cursor', 'PRO')).toBe(subscriptionJoinKey('cursor', 'pro'))
