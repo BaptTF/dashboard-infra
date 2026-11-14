@@ -37,12 +37,16 @@ const percentInteger = new Intl.NumberFormat('fr-FR', {
 
 export function formatCurrency(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  return currency.format(value)
+  const formatted = currency.format(value)
+  // A positive amount that rounds to 0,00 $ is still a cost. Show the cent
+  // threshold instead of a zero that hides it.
+  if (value > 0 && formatted === currency.format(0)) return `< ${currency.format(0.01)}`
+  return formatted
 }
 
 export function formatCurrencyCompact(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  if (Math.abs(value) < 1000) return currency.format(value)
+  if (Math.abs(value) < 1000) return formatCurrency(value)
   return currencyCompact.format(value)
 }
 

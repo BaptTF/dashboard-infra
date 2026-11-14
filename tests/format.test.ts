@@ -12,6 +12,11 @@ describe('French formatting', () => {
   it('formats dollars, tokens and ratios', () => {
     expect(formatCurrency(12.5)).toContain('12,50')
     expect(formatCurrency(12.5)).toContain('$')
+    expect(formatCurrency(0)).toContain('0,00')
+    expect(formatCurrency(0.000011)).toBe(`< ${formatCurrency(0.01)}`)
+    expect(formatCurrency(0.004)).toBe(`< ${formatCurrency(0.01)}`)
+    expect(formatCurrency(0.01)).toContain('0,01')
+    expect(formatCurrency(0.01).startsWith('<')).toBe(false)
     expect(formatTokens(1_500_000)).toMatch(/1,5\s*M/)
     expect(formatPercent(0.631)).toContain('63,1')
     expect(formatDecimal(2.64)).toBe('2,6')
