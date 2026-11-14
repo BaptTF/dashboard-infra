@@ -49,6 +49,22 @@ describe('QuotaBar', () => {
     )
   })
 
+  it('shows the exact reset date in Paris time', () => {
+    render(
+      <QuotaBar
+        label="Mensuel · Total"
+        window="monthly"
+        usedRatio={0.5}
+        elapsedRatio={0.4}
+        severity={0}
+        dryDays={null}
+        resetAt={1796825165}
+        provider="cursor"
+      />,
+    )
+    expect(screen.getByText(/Reset le/)).toHaveTextContent(/9 déc. 2026, 15:06/)
+  })
+
   it('uses 70/90 markers for Cursor absolute levels', () => {
     render(
       <QuotaBar

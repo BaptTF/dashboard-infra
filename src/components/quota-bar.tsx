@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { Badge } from '~/components/ui/badge'
-import { countdown } from '~/lib/dates'
+import { countdown, formatParisDateTime } from '~/lib/dates'
 import { formatDecimal, formatPercent } from '~/lib/format'
 import {
   normalizeProvider,
@@ -147,7 +147,11 @@ export function QuotaBar({
 
       {resetAt != null ? (
         <p suppressHydrationWarning className="text-muted-foreground mt-1 text-xs">
-          Reset {countdown(resetAt)}
+          Reset le{' '}
+          <strong className="text-foreground font-medium">
+            {formatParisDateTime(resetAt * 1000)}
+          </strong>{' '}
+          ({countdown(resetAt)})
         </p>
       ) : null}
     </div>

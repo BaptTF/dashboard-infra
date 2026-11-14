@@ -109,7 +109,7 @@ max without (prometheus_replica, instance, pod, endpoint, service, namespace, co
 
 Règles de sévérité respectées : **Cursor et Devin** utilisent le niveau absolu de `ai_usage_quota_budget_severity` ; `elapsed_ratio` et `dry_days` restent purement informatifs. **OpenCode** monthly/weekly suit le budget calculé (ComputeBudget), et rolling_5h reste un seuil absolu. Le dashboard ne recalcule jamais la sévérité d'un quota à partir du rythme.
 
-Les fenêtres `monthly`, `weekly`, `daily` et `rolling` sont affichées séparément, avec des libellés français (`Quota total`, `Forfait inclus`, `API`, `Hors forfait`, `Grok`). Les barres montrent le consommé, le temps écoulé et les repères discrets à 80 % / 95 % ; la fenêtre glissante n'affiche pas de repère de temps écoulé. Les jours à sec signifient **jours projetés sans quota avant le reset** ; ils restent neutres pour Cursor et Devin. Le reset est sur une ligne distincte.
+Les fenêtres `monthly`, `weekly`, `daily` et `rolling` sont affichées séparément, avec des libellés français (`Quota total`, `Forfait inclus`, `API`, `Hors forfait`, `Grok`). Les barres montrent le consommé, le temps écoulé et les repères discrets à 80 % / 95 % ; la fenêtre glissante n'affiche pas de repère de temps écoulé. Les jours à sec signifient **jours projetés sans quota avant le reset** ; ils restent neutres pour Cursor et Devin. Le reset est sur une ligne distincte, avec la date exacte en Europe/Paris et le compte à rebours.
 
 La collecte est suivie **par abonnement** : un abonnement OpenCode en échec n'est jamais masqué par les autres. La carte du fournisseur agrège les statuts en gardant le plus dégradé, et le bandeau global suit le maillon le plus faible.
 
