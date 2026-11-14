@@ -13,11 +13,10 @@ export function SourceNotes() {
             Bifrost · compteurs
           </p>
           <p className="text-muted-foreground mt-1 leading-relaxed">
-            Coût reconstruit depuis le compteur cumulatif brut{' '}
-            <code className="font-mono text-[11px]">bifrost_cost_total</code>, avec baseline avant
-            la période et redémarrages traités. Les tokens et le cache utilisent{' '}
-            <code className="font-mono text-[11px]">increase()</code>. Toutes les clés sont
-            incluses, y compris <code className="font-mono text-[11px]">hermes-leo</code> et{' '}
+            Coût, tokens et cache lus reconstruits depuis les compteurs cumulatifs bruts, avec
+            baseline avant la période et redémarrages traités. Un compteur déjà à sa valeur finale
+            compte quand même. Toutes les clés sont incluses, y compris{' '}
+            <code className="font-mono text-[11px]">hermes-leo</code> et{' '}
             <code className="font-mono text-[11px]">hermes-lea</code>. Le backfill est journalier ;
             le live garde la granularité de la période.
           </p>

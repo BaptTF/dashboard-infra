@@ -1208,7 +1208,21 @@ function historyLiveCumulative(
   return total + historyIncrement(person, historyDay(start) + days) * fraction
 }
 
-function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
+function counterScale(person: FixturePerson, metric: string): number | null {
+  if (metric === 'bifrost_cost_total') return 1
+  const target =
+    metric === 'bifrost_input_tokens_total'
+      ? person.tokensIn
+      : metric === 'bifrost_output_tokens_total'
+        ? person.tokensOut
+        : metric === 'bifrost_cache_read_input_tokens_total'
+          ? person.cacheRead
+          : null
+  if (target == null || person.cost <= 0 || target <= 0) return null
+  return target / person.cost
+}
+
+function spendHistory(model: MockModel, params: URLSearchParams, metric: string): MockResponse {
   const start = Number(params.get('start'))
   const end = Number(params.get('end'))
   const step = Math.max(3600, Number(params.get('step')) || DAY)
@@ -1218,13 +1232,15 @@ function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
 
   const rows: { metric: Record<string, string>; values: [number, string][] }[] = []
   for (const person of model.people) {
+    const scale = counterScale(person, metric)
+    if (scale == null) continue
     const backfillValues: [number, string][] = []
     const liveValues: [number, string][] = []
     for (let timestamp = start; timestamp <= end; timestamp += step) {
       const backfill = historyBackfillCumulative(model, person, timestamp)
-      if (backfill != null) backfillValues.push([timestamp, backfill.toFixed(6)])
+      if (backfill != null) backfillValues.push([timestamp, (backfill * scale).toFixed(6)])
       const live = historyLiveCumulative(model, person, timestamp)
-      if (live != null) liveValues.push([timestamp, live.toFixed(6)])
+      if (live != null) liveValues.push([timestamp, (live * scale).toFixed(6)])
     }
     if (backfillValues.length > 0) {
       rows.push({
@@ -1248,6 +1264,8 @@ function spendHistory(model: MockModel, params: URLSearchParams): MockResponse {
       })
     }
   }
+
+  if (metric !== 'bifrost_cost_total') return { status: 200, body: matrix(rows) }
 
   // A backfill model appears late with a non-zero first day: its delta from
   // zero is valid, not a spike caused by aggregating keys before deltas.
@@ -1306,9 +1324,13 @@ export function handlePrometheusRequest(
     const query = params.get('query') ?? ''
     if (model.scenario === 'empty') return { status: 200, body: matrix([]) }
     if (query.includes('ai_usage_quota_used_ratio')) return quotaHistory(model, params, query)
-    if (query.includes('bifrost_cost_total')) {
-      return spendHistory(model, params)
-    }
+    const counter = [
+      'bifrost_cost_total',
+      'bifrost_input_tokens_total',
+      'bifrost_output_tokens_total',
+      'bifrost_cache_read_input_tokens_total',
+    ].find((name) => query.includes(name))
+    if (counter) return spendHistory(model, params, counter)
     return { status: 200, body: matrix([]) }
   }
   return { status: 404, body: 'not found' }

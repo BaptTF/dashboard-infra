@@ -1,6 +1,7 @@
 import { normalizeSpendWindow } from './dates'
 import {
-  buildSpendCostQuery,
+  BIFROST_TOKEN_METRICS,
+  buildSpendCounterQuery,
   buildSpendQueries,
   makeErrorReport,
   makeReport,
@@ -17,15 +18,16 @@ function message(error: unknown): string {
 }
 
 /**
- * Fetches the raw cumulative cost counter twice: a wide daily reference seeds
- * one baseline per series before the period, then the period itself runs at the
- * adaptive granularity. Both the curve and the cost totals consume this merge.
+ * Fetches one raw cumulative counter twice: a wide daily reference seeds one
+ * baseline per series before the period, then the period itself runs at the
+ * adaptive granularity. Cost and token totals share this merge.
  */
-export async function fetchBifrostCostRows(
+export async function fetchBifrostCounterRows(
   client: PrometheusClient,
   plan: ReturnType<typeof spendHistoryPlan>,
+  metric: string,
 ): Promise<MetricSeries[]> {
-  const query = buildSpendCostQuery()
+  const query = buildSpendCounterQuery(metric)
   const [baseline, period] = await Promise.all([
     client.queryRange(
       query,
@@ -78,6 +80,13 @@ export async function fetchBifrostCostRows(
   })
 }
 
+export function fetchBifrostCostRows(
+  client: PrometheusClient,
+  plan: ReturnType<typeof spendHistoryPlan>,
+): Promise<MetricSeries[]> {
+  return fetchBifrostCounterRows(client, plan, 'bifrost_cost_total')
+}
+
 export async function fetchSpendReport(
   client: PrometheusClient | null,
   config: PrometheusConfig,
@@ -93,11 +102,13 @@ export async function fetchSpendReport(
   }
 
   const plan = spendHistoryPlan(id, now)
-  const range = `${Math.max(300, Math.floor((now.getTime() - plan.from.getTime()) / 1000))}s`
   try {
-    const [costRows, settled] = await Promise.all([
+    const [costRows, inputRows, outputRows, cacheRows, settled] = await Promise.all([
       fetchBifrostCostRows(client, plan),
-      Promise.allSettled(buildSpendQueries(id, range).map((query) => client.query(query))),
+      fetchBifrostCounterRows(client, plan, BIFROST_TOKEN_METRICS[0]),
+      fetchBifrostCounterRows(client, plan, BIFROST_TOKEN_METRICS[1]),
+      fetchBifrostCounterRows(client, plan, BIFROST_TOKEN_METRICS[2]),
+      Promise.allSettled(buildSpendQueries(id).map((query) => client.query(query))),
     ])
     for (const result of settled) {
       if (result.status === 'rejected') {
@@ -111,17 +122,16 @@ export async function fetchSpendReport(
     const samples = settled.map((result) =>
       result.status === 'fulfilled' ? result.value : ([] as MetricSample[]),
     )
-    const [input, output, cache, leoCost, leoTokens, leoSessions, leaCost, leaTokens, leaSessions] =
-      samples
+    const [leoCost, leoTokens, leoSessions, leaCost, leaTokens, leaSessions] = samples
     const cost = reconstructBifrostCost(costRows, plan)
     return makeReport(
       now,
       id,
       {
         cost: cost.samples,
-        input: input ?? [],
-        output: output ?? [],
-        cache: cache ?? [],
+        input: reconstructBifrostCost(inputRows, plan).samples,
+        output: reconstructBifrostCost(outputRows, plan).samples,
+        cache: reconstructBifrostCost(cacheRows, plan).samples,
         leoCost: leoCost ?? [],
         leoTokens: leoTokens ?? [],
         leoSessions: leoSessions ?? [],

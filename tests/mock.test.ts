@@ -305,6 +305,7 @@ describe('report and history share one Bifrost cost truth', () => {
       expect(history.error).toBeUndefined()
       expect(report.people.some((person) => person.virtualKey === 'hermes-leo')).toBe(true)
       expect(report.people.some((person) => person.virtualKey === 'hermes-lea')).toBe(true)
+      expect(report.people.some((person) => person.tokensIn > 0 && person.tokensOut > 0)).toBe(true)
       expect(report.people.filter((person) => person.virtualKey === 'hermes-leo')).toHaveLength(1)
 
       for (const entry of history.series) {

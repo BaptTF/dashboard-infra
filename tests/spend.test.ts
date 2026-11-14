@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assembleLeo,
   buildSpendCostQuery,
+  buildSpendCounterQuery,
   buildSpendQueries,
   HISTORY_REFERENCE_DAYS,
   makeReport,
@@ -264,33 +265,35 @@ describe('spend report ported from internal/spend/client.go', () => {
   })
 
   it('normalizes unknown window values to one month', () => {
-    expect(buildSpendQueries('1m', '2678400s')).toHaveLength(9)
+    expect(buildSpendQueries('1m')).toHaveLength(6)
   })
 })
 
 describe('spend PromQL', () => {
-  it('removes Hermes exclusions from tokens and cache queries', () => {
-    const queries = buildSpendQueries('3m', '7776000s')
-    expect(queries[0]).toBe(
-      'sum by (virtual_key_name, provider, model) (max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)(increase(bifrost_input_tokens_total[7776000s])))',
-    )
-    expect(queries[1]).toContain('bifrost_output_tokens_total[7776000s]')
-    expect(queries[2]).toContain('bifrost_cache_read_input_tokens_total[7776000s]')
+  it('keeps Hermes window gauges and leaves Bifrost counters to reconstruction', () => {
+    const queries = buildSpendQueries('3m')
+    expect(queries).toHaveLength(6)
+    expect(queries.join(' ')).not.toContain('bifrost_')
+    expect(queries.join(' ')).not.toContain('increase')
     expect(queries.join(' ')).not.toContain('virtual_key_name!~')
-    expect(queries[3]).toBe(
+    expect(queries[0]).toBe(
       'max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)(hermes_window_cost_usd{agent="leo",window="3m"})',
     )
-    expect(queries[8]).toContain('hermes_window_sessions{agent="lea",window="3m"}')
+    expect(queries[5]).toContain('hermes_window_sessions{agent="lea",window="3m"}')
     expect(queries.every((query) => !query.includes('sum(') || query.includes('sum by'))).toBe(true)
   })
 
-  it('reads the raw cumulative cost counter without increase or exclusions', () => {
-    const query = buildSpendCostQuery()
-    expect(query).not.toContain('increase')
-    expect(query).not.toContain('virtual_key_name!~')
-    expect(query).toContain('sum by (virtual_key_name, provider, model, backfill)')
-    expect(query).toContain('last_over_time(bifrost_cost_total[2d])')
-    expect(query).toContain('max without')
+  it('reads raw cumulative Bifrost counters without increase or exclusions', () => {
+    const cost = buildSpendCostQuery()
+    const input = buildSpendCounterQuery('bifrost_input_tokens_total')
+    for (const query of [cost, input]) {
+      expect(query).not.toContain('increase')
+      expect(query).not.toContain('virtual_key_name!~')
+      expect(query).toContain('sum by (virtual_key_name, provider, model, backfill)')
+      expect(query).toContain('max without')
+    }
+    expect(cost).toContain('last_over_time(bifrost_cost_total[2d])')
+    expect(input).toContain('last_over_time(bifrost_input_tokens_total[2d])')
   })
 })
 
@@ -406,6 +409,35 @@ describe('Bifrost cost reconstruction', () => {
     // the Paris month boundary. Only the 1 November day remains.
     expect(result.series[0]?.points).toEqual([
       { timestamp: Date.UTC(2026, 10, 1, 23, 59) / 1000, value: 3 },
+    ])
+  })
+
+  it('charges a flat counter instead of reporting it as zero', () => {
+    const result = reconstructBifrostCost(
+      [
+        row(
+          {
+            virtual_key_name: 'tailscale-baptiste',
+            provider: 'opencode-go',
+            model: 'claude-haiku-5-5',
+          },
+          [
+            ['2026-11-09T21:00:00Z', 10],
+            ['2026-11-09T22:00:00Z', 10],
+          ],
+        ),
+      ],
+      plan,
+    )
+    expect(result.samples).toEqual([
+      {
+        labels: {
+          virtual_key_name: 'tailscale-baptiste',
+          provider: 'opencode-go',
+          model: 'claude-haiku-5-5',
+        },
+        value: 10,
+      },
     ])
   })
 

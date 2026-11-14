@@ -19,31 +19,32 @@ import type {
 } from './types'
 
 /**
- * Bifrost counters (cost, tokens) reset when the gateway restarts. Token and
- * cache totals use increase() over the selected span. Cost is never taken from
- * increase(): one reconstruction of the raw cumulative counter feeds both the
- * history curve and the Bifrost cost totals. Hermes window series already hold
- * the consumption inside that span and are read as the current sample. The two
- * clocks must not be added together.
+ * Bifrost counters (cost, tokens, cache) reset when the gateway restarts.
+ * increase() drops a counter that is already at its final value and never
+ * moves again, so every Bifrost total is reconstructed from the raw cumulative
+ * counter. Hermes window series already hold the consumption inside that span
+ * and are read as the current sample. The two clocks must not be added together.
  */
 export const DEDUPE = `max without (prometheus_replica, instance, pod, endpoint, service, namespace, container, job)`
-export const BY_CALLER = `sum by (virtual_key_name, provider, model) (` + DEDUPE + `(increase(`
 
 /** Bounded lookback: backfill samples arrive daily, live counters every scrape. */
 export const BIFROST_COST_LOOKBACK = '2d'
 export const HISTORY_REFERENCE_DAYS = 730
 
+export const BIFROST_TOKEN_METRICS = [
+  'bifrost_input_tokens_total',
+  'bifrost_output_tokens_total',
+  'bifrost_cache_read_input_tokens_total',
+] as const
+
 export function normalizeWindow(id: string | undefined): SpendWindow {
   return id === '3m' || id === '6m' || id === '1y' || id === 'all' ? id : '1m'
 }
 
-export function buildSpendQueries(id: SpendWindow, range: string): string[] {
+export function buildSpendQueries(id: SpendWindow): string[] {
   const hermes = (metric: string, agent: 'leo' | 'lea') =>
     `${DEDUPE}(${metric}{agent="${agent}",window="${id}"})`
   return [
-    `${BY_CALLER}bifrost_input_tokens_total[${range}])))`,
-    `${BY_CALLER}bifrost_output_tokens_total[${range}])))`,
-    `${BY_CALLER}bifrost_cache_read_input_tokens_total[${range}])))`,
     hermes('hermes_window_cost_usd', 'leo'),
     hermes('hermes_window_tokens', 'leo'),
     hermes('hermes_window_sessions', 'leo'),
@@ -54,12 +55,16 @@ export function buildSpendQueries(id: SpendWindow, range: string): string[] {
 }
 
 /**
- * Raw cumulative counter for the single cost reconstruction. The lookback keeps
- * stale backfill series visible between their daily samples without turning a
- * new series into a fake spike: identity is kept per key/provider/model/backfill.
+ * Raw cumulative counter. The lookback keeps stale series visible between
+ * samples without turning a new series into a fake spike: identity is kept per
+ * key/provider/model/backfill. Cost and token counters share this query.
  */
+export function buildSpendCounterQuery(metric: string, lookback = BIFROST_COST_LOOKBACK): string {
+  return `sum by (virtual_key_name, provider, model, backfill) (${DEDUPE}(last_over_time(${metric}[${lookback}])))`
+}
+
 export function buildSpendCostQuery(lookback = BIFROST_COST_LOOKBACK): string {
-  return `sum by (virtual_key_name, provider, model, backfill) (${DEDUPE}(last_over_time(bifrost_cost_total[${lookback}])))`
+  return buildSpendCounterQuery('bifrost_cost_total', lookback)
 }
 
 /** Evaluations are aligned on UTC midnight, just after the 23:59 backfill sample. */
@@ -145,8 +150,11 @@ export interface BifrostCostReconstruction {
 }
 
 /**
- * Rebuilds Bifrost costs from one cumulative counter. This is the only source
- * of truth for both the history curve and the Bifrost cost totals:
+ * Rebuilds one Bifrost cumulative counter. Cost, input, output and cache read
+ * all use it: a first sample with no baseline is the consumption since reset,
+ * including a counter that never moves after that sample. increase() would
+ * report that plateau as zero. The history curve still comes from the cost
+ * counter only.
  *
  * - a baseline point before the period (last sample <= start) seeds the series;
  * - without a baseline, the first sample is charged from zero: a backfill's
