@@ -7,11 +7,20 @@ import { Panel } from '~/components/panel'
 import { StatusBanner } from '~/components/status-banner'
 import { TimeRangePicker } from '~/components/time-range-picker'
 import { Button } from '~/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
 import { formatParisDateTime, formatParisDateTimeCompact, quotaWindowLabel } from '~/lib/dates'
 import { formatPercent, historyRangeLabel, quotaLabel } from '~/lib/format'
 import { providerLabel, sharedQuotaThresholds, subscriptionDisplayName } from '~/lib/providers'
 import { mergeQuotaHistorySeries } from '~/lib/subscriptions'
-import type { HistoryRange, QuotaHistory, QuotaWindow } from '~/lib/types'
+import type { HistoryRange, QuotaHistory, QuotaHistorySeries, QuotaWindow } from '~/lib/types'
 import type { MetricPoint } from '~/lib/types'
 
 const windowOptions = [
@@ -20,6 +29,15 @@ const windowOptions = [
   { value: 'daily', label: 'Quotidien' },
   { value: 'rolling', label: 'Glissant' },
 ] as const
+
+function seriesId(entry: QuotaHistorySeries): string {
+  return [entry.provider, entry.subscription, entry.window, entry.quota].join('\u0000')
+}
+
+function seriesLabel(entry: QuotaHistorySeries, includeQuota: boolean): string {
+  const base = `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)}`
+  return includeQuota ? `${base} · ${quotaLabel(entry.quota)}` : base
+}
 
 function downsample(points: MetricPoint[], maxPoints = 30): MetricPoint[] {
   if (points.length <= maxPoints) return points
@@ -46,20 +64,30 @@ export function QuotaHistoryPanel({
   /** Distinguishes "no daily series exported" from "not collected yet". */
   hasQuotaForWindow?: boolean
 }) {
-  const [showDetails, setShowDetails] = useState(false)
+  const [selection, setSelection] = useState<{ scope: string; ids: string[] } | null>(null)
   const data = query.data
   // The server already merges exact duplicates; doing it again protects the
   // client from placeholder payloads and keeps the legend count stable.
   const allSeries = data ? mergeQuotaHistorySeries(data.series) : []
-  const hasDetailSeries = allSeries.some((entry) => entry.quota !== 'total')
-  const withDetails = showDetails || !hasDetailSeries
-  // Default view: one total per key. The included/API/on-demand breakdown is
-  // opt-in, which keeps the chart and its mobile legend readable.
-  const series = withDetails ? allSeries : allSeries.filter((entry) => entry.quota === 'total')
+  const seriesSignature = allSeries.map(seriesId).sort().join('\u0000')
+  const scope = `${window}\u0000${range}\u0000${seriesSignature}`
+  const defaultIds = allSeries.filter((entry) => entry.quota === 'total').map(seriesId)
+  const selectedIds = new Set(selection?.scope === scope ? selection.ids : defaultIds)
+  const series = allSeries.filter((entry) => selectedIds.has(seriesId(entry)))
+  const detailSeries = allSeries.filter((entry) => entry.quota !== 'total')
+  const hasDetailSeries = detailSeries.length > 0
+  const withDetails = series.some((entry) => entry.quota !== 'total')
+  const setIds = (ids: string[]) => setSelection({ scope, ids })
+  const toggleSeries = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setIds([...next])
+  }
+  const selectAll = () => setIds(allSeries.map(seriesId))
+  const selectTotals = () => setIds(defaultIds)
   const chartSeries = series.map((entry) => ({
-    name: `${providerLabel(entry.provider)} · ${subscriptionDisplayName(entry.provider, entry.subscription)}${
-      withDetails ? ` · ${quotaLabel(entry.quota)}` : ''
-    }`,
+    name: seriesLabel(entry, withDetails),
     points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
   }))
   const thresholds = sharedQuotaThresholds(
@@ -111,9 +139,15 @@ export function QuotaHistoryPanel({
     : series.length > 0
       ? 'Consommation observée dans Prometheus. Plusieurs grilles de repères coexistent : les seuils sont masqués pour ne pas induire en erreur. Les trous de collecte restent visibles.'
       : 'Consommation observée dans Prometheus. La courbe commence à la première série collectée, jamais avant.'
+  const selectionNote =
+    allSeries.length === 0
+      ? ''
+      : series.length === allSeries.length
+        ? 'Toutes les séries.'
+        : `${series.length} série${series.length > 1 ? 's' : ''} sélectionnée${series.length > 1 ? 's' : ''}.`
   const description = `${baseDescription} ${
-    withDetails ? 'Tous les quotas sont affichés.' : 'Totaux par clé affichés par défaut.'
-  }`
+    withDetails ? 'Détails inclus.' : 'Totaux par clé.'
+  } ${selectionNote}`
 
   return (
     <Panel
@@ -128,16 +162,72 @@ export function QuotaHistoryPanel({
             label="Fenêtre de quota"
             size="sm"
           />
-          {hasDetailSeries ? (
-            <Button
-              variant={showDetails ? 'secondary' : 'outline'}
-              size="sm"
-              aria-pressed={showDetails}
-              onClick={() => setShowDetails((current) => !current)}
-            >
-              <ListFilter aria-hidden="true" />
-              Détails des quotas
-            </Button>
+          {allSeries.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <ListFilter aria-hidden="true" />
+                  Séries
+                  <span className="text-muted-foreground text-[11px]">
+                    ({series.length}/{allSeries.length})
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
+                <div className="flex gap-1 p-1">
+                  <DropdownMenuItem
+                    className="flex-1 justify-center px-2"
+                    onSelect={() => selectTotals()}
+                  >
+                    Totaux seuls
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="flex-1 justify-center px-2"
+                    onSelect={() => selectAll()}
+                  >
+                    Tout afficher
+                  </DropdownMenuItem>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Totaux par clé</DropdownMenuLabel>
+                {allSeries
+                  .filter((entry) => entry.quota === 'total')
+                  .map((entry) => {
+                    const id = seriesId(entry)
+                    return (
+                      <DropdownMenuCheckboxItem
+                        key={id}
+                        checked={selectedIds.has(id)}
+                        onCheckedChange={() => toggleSeries(id)}
+                        onSelect={(event) => event.preventDefault()}
+                        className="whitespace-normal"
+                      >
+                        {seriesLabel(entry, false)}
+                      </DropdownMenuCheckboxItem>
+                    )
+                  })}
+                {hasDetailSeries ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Détails</DropdownMenuLabel>
+                    {detailSeries.map((entry) => {
+                      const id = seriesId(entry)
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={id}
+                          checked={selectedIds.has(id)}
+                          onCheckedChange={() => toggleSeries(id)}
+                          onSelect={(event) => event.preventDefault()}
+                          className="whitespace-normal"
+                        >
+                          {seriesLabel(entry, true)}
+                        </DropdownMenuCheckboxItem>
+                      )
+                    })}
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
         </>
       }
@@ -173,8 +263,14 @@ export function QuotaHistoryPanel({
           description="Renseignez PROMETHEUS_URL côté serveur pour activer l’historique."
           icon={CalendarClock}
         />
-      ) : data && series.length === 0 ? (
+      ) : data && allSeries.length === 0 ? (
         <EmptyState title={emptyTitle} description={emptyDescription} icon={CalendarClock} />
+      ) : data && series.length === 0 ? (
+        <EmptyState
+          title="Aucune série sélectionnée"
+          description="Choisissez au moins une série dans le menu « Séries »."
+          icon={ListFilter}
+        />
       ) : data ? (
         <div className="space-y-3">
           <Chart
@@ -190,6 +286,7 @@ export function QuotaHistoryPanel({
             stepSeconds={data.stepSeconds}
             dataKey={`quotas-${window}-${range}-${withDetails ? 'details' : 'totals'}`}
             listLegend
+            sampling="minmax"
             emptyTitle="Aucun point dans cette fenêtre"
           />
           {pointCount === 1 ? (

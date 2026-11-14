@@ -115,6 +115,7 @@ export function Chart({
   emptyTitle = 'Aucun point à tracer',
   emptyDescription,
   listLegend = false,
+  sampling = 'lttb',
 }: {
   series: ChartSeries[]
   unit: 'percent' | 'currency' | 'tokens'
@@ -135,6 +136,8 @@ export function Chart({
   emptyDescription?: ReactNode
   /** Render a DOM legend below the chart when the canvas legend would hide on mobile. */
   listLegend?: boolean
+  /** ECharts sampling mode. minmax preserves short quota cycle peaks. */
+  sampling?: 'lttb' | 'minmax'
 }) {
   const container = useRef<HTMLDivElement>(null)
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null)
@@ -374,7 +377,7 @@ export function Chart({
           symbol: 'circle',
           symbolSize: 4,
           smooth: false,
-          sampling: 'lttb',
+          sampling,
           connectNulls: false,
           lineStyle: { width: 1.8, color },
           itemStyle: { color },
@@ -460,6 +463,7 @@ export function Chart({
     narrow,
     reducedMotion,
     resolvedTheme,
+    sampling,
     series,
     stacked,
     stepMs,

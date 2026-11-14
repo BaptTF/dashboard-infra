@@ -143,7 +143,10 @@ export async function fetchSubscriptionsOverview(
   }
 }
 
-export function historyStepSeconds(range: HistoryRange): number {
+export function historyStepSeconds(range: HistoryRange, window?: QuotaWindow): number {
+  // The rolling window lasts 5 h: a coarser step would sample different phases
+  // of the cycle and make the curve look random. Keep one point per hour.
+  if (window === 'rolling') return 60 * 60
   switch (range) {
     case '1m':
       return 60 * 60
@@ -169,7 +172,7 @@ export async function fetchQuotaHistory(
   const window = normalizeQuotaWindow(input.window)
   const range = normalizeHistoryRange(input.range)
   const from = historyRangeStart(now, range)
-  const stepSeconds = historyStepSeconds(range)
+  const stepSeconds = historyStepSeconds(range, window)
   const base: QuotaHistory = {
     configured: config.configured,
     mockMode: config.mockMode,
