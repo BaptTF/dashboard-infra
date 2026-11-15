@@ -272,8 +272,9 @@ function unattributedHermesSlice(person: HermesViewRow): HermesViewRow | null {
     tokensOut: nearlyZero(person.tokensOut - covered.tokensOut),
     cacheRead: nearlyZero(person.cacheRead - covered.cacheRead),
     cacheWrite: nearlyZero(person.cacheWrite - covered.cacheWrite),
-    // Unscoped sessions are counted once on the person, never on a provider.
-    sessions: person.sessions,
+    // Person sessions are a total, not spend without a provider. They stay in
+    // the table footer so this row is not read as « every session is unscoped ».
+    sessions: 0,
   }
   if (
     slice.costUsd === 0 &&
@@ -303,8 +304,8 @@ function byHermesCost(a: HermesViewRow, b: HermesViewRow): number {
 
 /**
  * Lifts each provider above the people that use it. Cost and tokens that have
- * no provider — and sessions counted only on the person — stay under
- * « Sans fournisseur » so the pivot does not drop them.
+ * no provider stay under « Sans fournisseur ». Sessions counted once per
+ * person stay in the table footer.
  */
 export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
   const groups = new Map<string, HermesViewRow>()

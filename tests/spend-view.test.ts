@@ -154,7 +154,7 @@ describe('groupHermesByProvider', () => {
     ],
   }
 
-  it('keeps unscoped sessions under Sans fournisseur', () => {
+  it('keeps unscoped cost under Sans fournisseur and leaves person sessions to the footer', () => {
     const grouped = groupHermesByProvider(buildHermesRows([camille], other, 'Hors Telegram'))
 
     expect(grouped.map((row) => row.label)).toEqual(['opencode-go', 'custom', 'Sans fournisseur'])
@@ -169,8 +169,17 @@ describe('groupHermesByProvider', () => {
     ])
     const unattributed = grouped[2]
     expect(unattributed?.costUsd).toBeCloseTo(0.2)
-    expect(unattributed?.sessions).toBe(40)
+    expect(unattributed?.sessions).toBe(0)
     expect(unattributed?.children.map((row) => row.label)).toEqual(['Hors Telegram'])
     expect(unattributed?.children[0]?.children).toEqual([])
+    expect(unattributed?.children[0]?.sessions).toBe(0)
+  })
+
+  it('omits Sans fournisseur when the leftover is only the person session total', () => {
+    const covered: LeoUser = { ...camille, sessions: 64 }
+    const grouped = groupHermesByProvider(buildHermesRows([covered], null, 'Hors Telegram'))
+
+    expect(grouped.map((row) => row.label)).toEqual(['opencode-go'])
+    expect(grouped[0]?.sessions).toBe(0)
   })
 })
