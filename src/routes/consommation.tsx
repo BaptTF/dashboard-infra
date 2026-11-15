@@ -19,7 +19,9 @@ import { consumptionHistoryQueryOptions, consumptionReportQueryOptions } from '~
 import {
   includesAgent,
   includesBifrost,
+  normalizeSpendGrouping,
   selectedBifrostKey,
+  type SpendGrouping,
   type SpendSource,
 } from '~/lib/spend-view'
 import type { SpendWindow } from '~/lib/types'
@@ -27,6 +29,7 @@ import type { SpendWindow } from '~/lib/types'
 interface ConsumptionSearch {
   window: SpendWindow
   source: SpendSource
+  group: SpendGrouping
 }
 
 function normalizeSource(value: unknown): SpendSource {
@@ -37,6 +40,7 @@ export const Route = createFileRoute('/consommation')({
   validateSearch: (search: Record<string, unknown>): ConsumptionSearch => ({
     window: normalizeSpendWindow(typeof search.window === 'string' ? search.window : undefined),
     source: normalizeSource(search.source),
+    group: normalizeSpendGrouping(search.group),
   }),
   loaderDeps: ({ search }) => ({ window: search.window }),
   loader: async ({ context, deps }) => {
@@ -60,6 +64,19 @@ const sourceOptions = [
   { value: 'lea', label: 'Léa', title: 'Clé Bifrost hermes-lea et détail Hermes par personne' },
 ] as const
 
+const groupOptions = [
+  {
+    value: 'key',
+    label: 'Par clé',
+    title: 'Une ligne par clé Bifrost ou par personne Hermes, puis le fournisseur',
+  },
+  {
+    value: 'provider',
+    label: 'Par fournisseur',
+    title: 'Une ligne par fournisseur, par exemple opencode-go, puis la clé ou la personne',
+  },
+] as const
+
 function ConsumptionPage() {
   const search = Route.useSearch()
   const reportQuery = useQuery(consumptionReportQueryOptions(search.window))
@@ -79,7 +96,7 @@ function ConsumptionPage() {
     <DashboardPage
       eyebrow="Dépenses & tokens"
       title="Consommation"
-      description="Coût, tokens et cache par personne, fournisseur et modèle. Les compteurs Bifrost couvrent toutes les clés, y compris Hermes ; la vue Hermes par personne est une source distincte, jamais ajoutée."
+      description="Coût, tokens et cache par clé ou par fournisseur, puis par modèle. Les compteurs Bifrost couvrent toutes les clés, y compris Hermes ; la vue Hermes par personne est une source distincte, jamais ajoutée."
       actions={
         <>
           {report?.mockMode ? (
@@ -164,12 +181,20 @@ function ConsumptionPage() {
 
           return (
             <div className="space-y-5">
-              <TimeRangePicker
-                param="source"
-                value={search.source}
-                options={sourceOptions}
-                label="Source de consommation"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <TimeRangePicker
+                  param="source"
+                  value={search.source}
+                  options={sourceOptions}
+                  label="Source de consommation"
+                />
+                <TimeRangePicker
+                  param="group"
+                  value={search.group}
+                  options={groupOptions}
+                  label="Regroupement"
+                />
+              </div>
 
               <SpendSummary report={data} source={search.source} />
 
@@ -179,6 +204,7 @@ function ConsumptionPage() {
                     <BifrostTable
                       report={data}
                       onlyKeys={selectedKey ? [selectedKey] : undefined}
+                      grouping={search.group}
                     />
                   ) : null}
                   {!hermesAllTime && includesAgent(search.source, 'leo') ? (
@@ -189,6 +215,7 @@ function ConsumptionPage() {
                       other={data.leoOther}
                       otherLabel="Hors Telegram"
                       agent="leo"
+                      grouping={search.group}
                     />
                   ) : null}
                   {!hermesAllTime && includesAgent(search.source, 'lea') ? (
@@ -199,6 +226,7 @@ function ConsumptionPage() {
                       other={data.leaOther}
                       otherLabel="Hors Telegram"
                       agent="lea"
+                      grouping={search.group}
                     />
                   ) : null}
                   {hermesAllTime &&

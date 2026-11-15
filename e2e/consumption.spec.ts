@@ -178,6 +178,41 @@ test('back and forward resynchronise period and source controls', async ({ page 
   await expect(oneMonth).toHaveAttribute('aria-pressed', 'false')
 })
 
+test('groups the tables by provider and keeps the choice in the URL', async ({ page }) => {
+  await gotoHydrated(page, '/consommation?window=1m&source=all')
+  const byKey = page.getByRole('button', { name: 'Par clé', exact: true })
+  const byProvider = page.getByRole('button', { name: 'Par fournisseur', exact: true })
+  await expect(byKey).toHaveAttribute('aria-pressed', 'true')
+
+  await byProvider.click()
+  await expect(page).toHaveURL(/group=provider/)
+  await expect(byProvider).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Regroupé par fournisseur').first()).toBeVisible()
+
+  const bifrost = page.getByRole('region', { name: /Consommation Bifrost par fournisseur/ })
+  await expect(bifrost.getByRole('button', { name: 'Déplier tailscale-noe' })).toHaveCount(0)
+  await bifrost.getByRole('button', { name: 'Déplier opencode-go' }).click()
+  await expect(bifrost.getByRole('button', { name: 'Déplier tailscale-camille' })).toBeVisible()
+  await bifrost.getByRole('button', { name: 'Déplier tailscale-camille' }).click()
+  await expect(bifrost.getByText('deepseek-v4.1-flash', { exact: true })).toBeVisible()
+
+  const leo = page.getByRole('region', { name: /Consommation Hermes leo par fournisseur/ })
+  await expect(leo.getByRole('button', { name: 'Déplier Sans fournisseur' })).toBeVisible()
+
+  await byKey.click()
+  await expect(page).toHaveURL(/group=key/)
+  await expect(page.getByRole('button', { name: 'Déplier tailscale-noe' })).toBeVisible()
+
+  await page.goBack()
+  await expect(page).toHaveURL(/group=provider/)
+  await expect(byProvider).toHaveAttribute('aria-pressed', 'true')
+  // Expansion is client state, so the row opened before the back navigation stays open.
+  await expect(
+    bifrost.getByRole('button', { name: /^(Déplier|Replier) opencode-go$/ }),
+  ).toBeVisible()
+  await expect(bifrost.getByText('deepseek-v4.1-flash', { exact: true })).toBeVisible()
+})
+
 test('a slow filter change keeps previous data visible and announces the update', async ({
   page,
 }) => {

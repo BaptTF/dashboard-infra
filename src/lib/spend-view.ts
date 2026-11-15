@@ -11,6 +11,13 @@ import type {
 
 export type SpendSource = 'all' | 'bifrost' | 'leo' | 'lea'
 
+/** `key` keeps clé/personne → fournisseur → modèle. `provider` flips the first level. */
+export type SpendGrouping = 'key' | 'provider'
+
+export function normalizeSpendGrouping(value: unknown): SpendGrouping {
+  return value === 'provider' ? 'provider' : 'key'
+}
+
 /** The Bifrost key behind a person filter, when there is one. */
 export function selectedBifrostKey(source: SpendSource): 'hermes-leo' | 'hermes-lea' | null {
   if (source === 'leo') return 'hermes-leo'
@@ -91,6 +98,58 @@ function modelToRow(person: string, provider: string, model: ModelSpend): SpendV
 
 export function buildSpendRows(people: PersonSpend[], origin?: SpendOrigin): SpendViewRow[] {
   return people.filter((person) => origin == null || person.origin === origin).map(personToRow)
+}
+
+function bySpendCost(a: SpendViewRow, b: SpendViewRow): number {
+  return b.cost - a.cost || a.label.localeCompare(b.label, 'fr')
+}
+
+/**
+ * Lifts each provider (opencode-go, bedrock, …) above the keys that use it.
+ * Input rows must be the key → provider → model tree. Model rows are reused.
+ */
+export function groupSpendByProvider(rows: SpendViewRow[]): SpendViewRow[] {
+  const groups = new Map<string, SpendViewRow>()
+  for (const person of rows) {
+    for (const provider of person.children) {
+      let group = groups.get(provider.provider)
+      if (!group) {
+        group = {
+          id: `provider-group:${provider.provider}`,
+          label: provider.label,
+          kind: 'provider',
+          origin: provider.origin,
+          provider: provider.provider,
+          model: '',
+          cost: 0,
+          tokensIn: 0,
+          tokensOut: 0,
+          cacheRead: 0,
+          children: [],
+        }
+        groups.set(provider.provider, group)
+      }
+      group.cost += provider.cost
+      group.tokensIn += provider.tokensIn
+      group.tokensOut += provider.tokensOut
+      group.cacheRead += provider.cacheRead
+      group.children.push({
+        id: `provider-group:${provider.provider}:${person.id}`,
+        label: person.label,
+        kind: 'person',
+        origin: person.origin,
+        provider: provider.provider,
+        model: '',
+        cost: provider.cost,
+        tokensIn: provider.tokensIn,
+        tokensOut: provider.tokensOut,
+        cacheRead: provider.cacheRead,
+        children: provider.children,
+      })
+    }
+  }
+  for (const group of groups.values()) group.children.sort(bySpendCost)
+  return [...groups.values()].sort(bySpendCost)
 }
 
 export interface HermesViewRow {
@@ -174,4 +233,124 @@ export function buildHermesRows(
   const rows = users.map((user) => leoPerson(user))
   if (other) rows.push(leoPerson(other, otherLabel))
   return rows
+}
+
+/** Sessions without a provider stay on the person and must not be added to a provider slice. */
+const UNATTRIBUTED_PROVIDER = '\u0000'
+
+function nearlyZero(value: number): number {
+  return Math.abs(value) < 1e-6 ? 0 : value
+}
+
+function unattributedHermesSlice(person: HermesViewRow): HermesViewRow | null {
+  const covered = person.children.reduce(
+    (total, child) => ({
+      costUsd: total.costUsd + child.costUsd,
+      tokensIn: total.tokensIn + child.tokensIn,
+      tokensOut: total.tokensOut + child.tokensOut,
+      cacheRead: total.cacheRead + child.cacheRead,
+      cacheWrite: total.cacheWrite + child.cacheWrite,
+    }),
+    { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0 },
+  )
+  const slice = {
+    costUsd: nearlyZero(person.costUsd - covered.costUsd),
+    tokensIn: nearlyZero(person.tokensIn - covered.tokensIn),
+    tokensOut: nearlyZero(person.tokensOut - covered.tokensOut),
+    cacheRead: nearlyZero(person.cacheRead - covered.cacheRead),
+    cacheWrite: nearlyZero(person.cacheWrite - covered.cacheWrite),
+    // Unscoped sessions are counted once on the person, never on a provider.
+    sessions: person.sessions,
+  }
+  if (
+    slice.costUsd === 0 &&
+    slice.tokensIn === 0 &&
+    slice.tokensOut === 0 &&
+    slice.cacheRead === 0 &&
+    slice.cacheWrite === 0 &&
+    slice.sessions === 0
+  ) {
+    return null
+  }
+  return {
+    id: `provider-group:unattributed:${person.id}`,
+    label: person.label,
+    source: person.source,
+    kind: 'person',
+    provider: '',
+    model: '',
+    ...slice,
+    children: [],
+  }
+}
+
+function byHermesCost(a: HermesViewRow, b: HermesViewRow): number {
+  return b.costUsd - a.costUsd || a.label.localeCompare(b.label, 'fr')
+}
+
+/**
+ * Lifts each provider above the people that use it. Cost and tokens that have
+ * no provider — and sessions counted only on the person — stay under
+ * « Sans fournisseur » so the pivot does not drop them.
+ */
+export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
+  const groups = new Map<string, HermesViewRow>()
+
+  const ensure = (key: string, label: string): HermesViewRow => {
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        id: key === UNATTRIBUTED_PROVIDER ? 'provider-group:unattributed' : `provider-group:${key}`,
+        label,
+        source: '',
+        kind: 'provider',
+        provider: key === UNATTRIBUTED_PROVIDER ? '' : key,
+        model: '',
+        costUsd: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        sessions: 0,
+        children: [],
+      }
+      groups.set(key, group)
+    }
+    return group
+  }
+
+  const add = (group: HermesViewRow, child: HermesViewRow) => {
+    group.costUsd += child.costUsd
+    group.tokensIn += child.tokensIn
+    group.tokensOut += child.tokensOut
+    group.cacheRead += child.cacheRead
+    group.cacheWrite += child.cacheWrite
+    group.sessions += child.sessions
+    group.children.push(child)
+  }
+
+  for (const person of rows) {
+    for (const provider of person.children) {
+      add(ensure(provider.provider, provider.label), {
+        id: `provider-group:${provider.provider}:${person.id}`,
+        label: person.label,
+        source: person.source,
+        kind: 'person',
+        provider: provider.provider,
+        model: '',
+        costUsd: provider.costUsd,
+        tokensIn: provider.tokensIn,
+        tokensOut: provider.tokensOut,
+        cacheRead: provider.cacheRead,
+        cacheWrite: provider.cacheWrite,
+        sessions: provider.sessions,
+        children: provider.children,
+      })
+    }
+    const remainder = unattributedHermesSlice(person)
+    if (remainder) add(ensure(UNATTRIBUTED_PROVIDER, 'Sans fournisseur'), remainder)
+  }
+
+  for (const group of groups.values()) group.children.sort(byHermesCost)
+  return [...groups.values()].sort(byHermesCost)
 }

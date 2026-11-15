@@ -7,7 +7,10 @@ import { formatCurrency, formatDecimal, formatTokens, formatTokensExact } from '
 import {
   buildHermesRows,
   buildSpendRows,
+  groupHermesByProvider,
+  groupSpendByProvider,
   type HermesViewRow,
+  type SpendGrouping,
   type SpendViewRow,
 } from '~/lib/spend-view'
 import type { LeoUser, SpendReport } from '~/lib/types'
@@ -25,193 +28,213 @@ function MobileStat({ label, value, title }: { label: string; value: string; tit
   )
 }
 
-const spendColumns: DataTableColumn<SpendViewRow>[] = [
-  {
-    key: 'name',
-    header: 'Clé · fournisseur · modèle',
-    cell: (row) => (
-      <div>
-        <p className="text-sm font-medium break-words">{row.label}</p>
-        {row.kind === 'model' &&
-        row.cost > 0 &&
-        row.tokensIn + row.tokensOut + row.cacheRead === 0 ? (
-          <Badge
-            variant="muted"
-            className="mt-1"
-            title="Coût reconstruit sans compteur de tokens associé"
-          >
-            coût seul
-          </Badge>
-        ) : null}
-        <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
-          <MobileStat
-            label="Entrée"
-            value={formatTokens(row.tokensIn)}
-            title={formatTokensExact(row.tokensIn)}
-          />
-          <MobileStat
-            label="Cache lu"
-            value={formatTokens(row.cacheRead)}
-            title={formatTokensExact(row.cacheRead)}
-          />
-          <MobileStat
-            label="Sortie"
-            value={formatTokens(row.tokensOut)}
-            title={formatTokensExact(row.tokensOut)}
-          />
-        </dl>
-      </div>
-    ),
-  },
-  {
-    key: 'cost',
-    header: 'Coût',
-    align: 'right',
-    cell: (row) => <span className="tnum text-sm font-medium">{formatCurrency(row.cost)}</span>,
-  },
-  {
-    key: 'in',
-    header: 'Entrée',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.tokensIn)}>
-        {formatTokens(row.tokensIn)}
-      </span>
-    ),
-  },
-  {
-    key: 'cache',
-    header: 'Cache lu',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.cacheRead)}>
-        {formatTokens(row.cacheRead)}
-      </span>
-    ),
-  },
-  {
-    key: 'out',
-    header: 'Sortie',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.tokensOut)}>
-        {formatTokens(row.tokensOut)}
-      </span>
-    ),
-  },
-]
+function spendColumns(grouping: SpendGrouping): DataTableColumn<SpendViewRow>[] {
+  return [
+    {
+      key: 'name',
+      header: grouping === 'provider' ? 'Fournisseur · clé · modèle' : 'Clé · fournisseur · modèle',
+      cell: (row) => (
+        <div>
+          <p className="text-sm font-medium break-words">{row.label}</p>
+          {row.kind === 'model' &&
+          row.cost > 0 &&
+          row.tokensIn + row.tokensOut + row.cacheRead === 0 ? (
+            <Badge
+              variant="muted"
+              className="mt-1"
+              title="Coût reconstruit sans compteur de tokens associé"
+            >
+              coût seul
+            </Badge>
+          ) : null}
+          <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
+            <MobileStat
+              label="Entrée"
+              value={formatTokens(row.tokensIn)}
+              title={formatTokensExact(row.tokensIn)}
+            />
+            <MobileStat
+              label="Cache lu"
+              value={formatTokens(row.cacheRead)}
+              title={formatTokensExact(row.cacheRead)}
+            />
+            <MobileStat
+              label="Sortie"
+              value={formatTokens(row.tokensOut)}
+              title={formatTokensExact(row.tokensOut)}
+            />
+          </dl>
+        </div>
+      ),
+    },
+    {
+      key: 'cost',
+      header: 'Coût',
+      align: 'right',
+      cell: (row) => <span className="tnum text-sm font-medium">{formatCurrency(row.cost)}</span>,
+    },
+    {
+      key: 'in',
+      header: 'Entrée',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.tokensIn)}>
+          {formatTokens(row.tokensIn)}
+        </span>
+      ),
+    },
+    {
+      key: 'cache',
+      header: 'Cache lu',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.cacheRead)}>
+          {formatTokens(row.cacheRead)}
+        </span>
+      ),
+    },
+    {
+      key: 'out',
+      header: 'Sortie',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.tokensOut)}>
+          {formatTokens(row.tokensOut)}
+        </span>
+      ),
+    },
+  ]
+}
 
-const hermesColumns: DataTableColumn<HermesViewRow>[] = [
-  {
-    key: 'name',
-    header: 'Personne · fournisseur · modèle',
-    cell: (row) => (
-      <div>
-        <p className="text-sm font-medium break-words">{row.label}</p>
-        <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
-          <MobileStat
-            label="Entrée"
-            value={formatTokens(row.tokensIn)}
-            title={formatTokensExact(row.tokensIn)}
-          />
-          <MobileStat
-            label="Cache lu"
-            value={formatTokens(row.cacheRead)}
-            title={formatTokensExact(row.cacheRead)}
-          />
-          <MobileStat
-            label="Cache écrit"
-            value={formatTokens(row.cacheWrite)}
-            title={formatTokensExact(row.cacheWrite)}
-          />
-          <MobileStat
-            label="Sortie"
-            value={formatTokens(row.tokensOut)}
-            title={formatTokensExact(row.tokensOut)}
-          />
-          <MobileStat label="Sessions" value={formatDecimal(row.sessions)} />
-        </dl>
-      </div>
-    ),
-  },
-  {
-    key: 'cost',
-    header: 'Coût',
-    align: 'right',
-    cell: (row) => <span className="tnum text-sm font-medium">{formatCurrency(row.costUsd)}</span>,
-  },
-  {
-    key: 'in',
-    header: 'Entrée',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.tokensIn)}>
-        {formatTokens(row.tokensIn)}
-      </span>
-    ),
-  },
-  {
-    key: 'read',
-    header: 'Cache lu',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.cacheRead)}>
-        {formatTokens(row.cacheRead)}
-      </span>
-    ),
-  },
-  {
-    key: 'write',
-    header: 'Cache écrit',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.cacheWrite)}>
-        {formatTokens(row.cacheWrite)}
-      </span>
-    ),
-  },
-  {
-    key: 'out',
-    header: 'Sortie',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => (
-      <span className="tnum" title={formatTokensExact(row.tokensOut)}>
-        {formatTokens(row.tokensOut)}
-      </span>
-    ),
-  },
-  {
-    key: 'sessions',
-    header: 'Sessions',
-    align: 'right',
-    className: secondary,
-    headerClassName: secondary,
-    cell: (row) => <span className="tnum">{formatDecimal(row.sessions)}</span>,
-  },
-]
+function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[] {
+  return [
+    {
+      key: 'name',
+      header:
+        grouping === 'provider'
+          ? 'Fournisseur · personne · modèle'
+          : 'Personne · fournisseur · modèle',
+      cell: (row) => (
+        <div>
+          <p className="text-sm font-medium break-words">{row.label}</p>
+          <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
+            <MobileStat
+              label="Entrée"
+              value={formatTokens(row.tokensIn)}
+              title={formatTokensExact(row.tokensIn)}
+            />
+            <MobileStat
+              label="Cache lu"
+              value={formatTokens(row.cacheRead)}
+              title={formatTokensExact(row.cacheRead)}
+            />
+            <MobileStat
+              label="Cache écrit"
+              value={formatTokens(row.cacheWrite)}
+              title={formatTokensExact(row.cacheWrite)}
+            />
+            <MobileStat
+              label="Sortie"
+              value={formatTokens(row.tokensOut)}
+              title={formatTokensExact(row.tokensOut)}
+            />
+            <MobileStat label="Sessions" value={formatDecimal(row.sessions)} />
+          </dl>
+        </div>
+      ),
+    },
+    {
+      key: 'cost',
+      header: 'Coût',
+      align: 'right',
+      cell: (row) => (
+        <span className="tnum text-sm font-medium">{formatCurrency(row.costUsd)}</span>
+      ),
+    },
+    {
+      key: 'in',
+      header: 'Entrée',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.tokensIn)}>
+          {formatTokens(row.tokensIn)}
+        </span>
+      ),
+    },
+    {
+      key: 'read',
+      header: 'Cache lu',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.cacheRead)}>
+          {formatTokens(row.cacheRead)}
+        </span>
+      ),
+    },
+    {
+      key: 'write',
+      header: 'Cache écrit',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.cacheWrite)}>
+          {formatTokens(row.cacheWrite)}
+        </span>
+      ),
+    },
+    {
+      key: 'out',
+      header: 'Sortie',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => (
+        <span className="tnum" title={formatTokensExact(row.tokensOut)}>
+          {formatTokens(row.tokensOut)}
+        </span>
+      ),
+    },
+    {
+      key: 'sessions',
+      header: 'Sessions',
+      align: 'right',
+      className: secondary,
+      headerClassName: secondary,
+      cell: (row) => <span className="tnum">{formatDecimal(row.sessions)}</span>,
+    },
+  ]
+}
 
-export function BifrostTable({ report, onlyKeys }: { report: SpendReport; onlyKeys?: string[] }) {
-  const rows = buildSpendRows(report.people, 'bifrost').filter(
+export function BifrostTable({
+  report,
+  onlyKeys,
+  grouping,
+}: {
+  report: SpendReport
+  onlyKeys?: string[]
+  grouping: SpendGrouping
+}) {
+  const byKey = buildSpendRows(report.people, 'bifrost').filter(
     (row) => !onlyKeys || onlyKeys.includes(row.label),
   )
+  const rows = grouping === 'provider' ? groupSpendByProvider(byKey) : byKey
   const scope =
     onlyKeys && onlyKeys.length === 1
       ? `Vue limitée à la clé ${onlyKeys[0]}. `
       : 'Toutes les clés, hermes-leo et hermes-lea incluses. '
+  const grouped =
+    grouping === 'provider' ? 'Regroupé par fournisseur, du plus coûteux au moins coûteux. ' : ''
 
   return (
     <Panel
@@ -221,7 +244,7 @@ export function BifrostTable({ report, onlyKeys }: { report: SpendReport; onlyKe
           Clés Bifrost
         </span>
       }
-      description={`${scope}La vue Hermes par personne est une source distincte, jamais ajoutée.`}
+      description={`${grouped}${scope}La vue Hermes par personne est une source distincte, jamais ajoutée.`}
     >
       {rows.length === 0 ? (
         <EmptyState
@@ -232,8 +255,12 @@ export function BifrostTable({ report, onlyKeys }: { report: SpendReport; onlyKe
         />
       ) : (
         <DataTable
-          caption="Consommation Bifrost par clé, dépliable jusqu’aux modèles."
-          columns={spendColumns}
+          caption={
+            grouping === 'provider'
+              ? 'Consommation Bifrost par fournisseur, dépliable jusqu’aux modèles.'
+              : 'Consommation Bifrost par clé, dépliable jusqu’aux modèles.'
+          }
+          columns={spendColumns(grouping)}
           rows={rows}
           getRowId={(row) => row.id}
           getRowLabel={(row) => row.label}
@@ -251,6 +278,7 @@ export function HermesTable({
   other,
   otherLabel,
   agent,
+  grouping,
 }: {
   title: string
   description: string
@@ -258,8 +286,10 @@ export function HermesTable({
   other: LeoUser | null
   otherLabel: string
   agent: 'leo' | 'lea'
+  grouping: SpendGrouping
 }) {
-  const rows = buildHermesRows(users, other, otherLabel)
+  const byPerson = buildHermesRows(users, other, otherLabel)
+  const rows = grouping === 'provider' ? groupHermesByProvider(byPerson) : byPerson
 
   return (
     <Panel
@@ -269,7 +299,11 @@ export function HermesTable({
           {title}
         </span>
       }
-      description={description}
+      description={
+        grouping === 'provider'
+          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description}`
+          : description
+      }
     >
       {rows.length === 0 ? (
         <EmptyState
@@ -280,8 +314,12 @@ export function HermesTable({
         />
       ) : (
         <DataTable
-          caption={`Consommation Hermes ${agent}, dépliable jusqu’aux modèles.`}
-          columns={hermesColumns}
+          caption={
+            grouping === 'provider'
+              ? `Consommation Hermes ${agent} par fournisseur, dépliable jusqu’aux modèles.`
+              : `Consommation Hermes ${agent}, dépliable jusqu’aux modèles.`
+          }
+          columns={hermesColumns(grouping)}
           rows={rows}
           getRowId={(row) => row.id}
           getRowLabel={(row) => row.label}

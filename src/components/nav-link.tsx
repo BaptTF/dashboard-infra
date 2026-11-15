@@ -1,12 +1,12 @@
 import { Link, useRouterState, useSearch } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { normalizeHistoryRange, normalizeQuotaWindow, normalizeSpendWindow } from '~/lib/dates'
-import type { SpendSource } from '~/lib/spend-view'
+import { normalizeSpendGrouping, type SpendSource } from '~/lib/spend-view'
 import { cn } from '~/lib/utils'
 
 const defaults = {
   '/': { window: 'monthly', history: '1m' },
-  '/consommation': { window: '1m', source: 'all' },
+  '/consommation': { window: '1m', source: 'all', group: 'key' },
 } as const
 
 function normalizeSource(value: unknown): SpendSource {
@@ -67,6 +67,7 @@ export function NavLink({
   const spendSearch = {
     window: normalizeSpendWindow(typeof search.window === 'string' ? search.window : undefined),
     source: normalizeSource(search.source),
+    group: normalizeSpendGrouping(search.group),
   }
   return (
     <Link
