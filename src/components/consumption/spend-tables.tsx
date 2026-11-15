@@ -181,7 +181,15 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
               value={formatTokens(row.tokensOut)}
               title={formatTokensExact(row.tokensOut)}
             />
-            <MobileStat label="Sessions" value={formatDecimal(row.sessions)} />
+            <MobileStat
+              label="Sessions"
+              value={row.sessionsDisplay === 'detail' ? 'détail' : formatDecimal(row.sessions)}
+              title={
+                row.sessionsDisplay === 'detail'
+                  ? "Détail par modèle, visible en dépliant. Ces sessions ne s'ajoutent pas au total des personnes."
+                  : 'Sessions comptées une fois pour cette ligne.'
+              }
+            />
           </dl>
         </div>
       ),
@@ -419,13 +427,19 @@ function hermesFooter(rows: HermesViewRow[], personSessions?: number) {
     }),
     { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, sessions: 0 },
   )
+  const sessions = personSessions ?? total.sessions
   return [
-    'Total',
+    <span key="total">
+      Total
+      <span className="text-muted-foreground mt-0.5 block text-[11px] font-normal md:hidden">
+        Sessions personnes {formatDecimal(sessions)}
+      </span>
+    </span>,
     formatCurrency(total.costUsd),
     formatTokens(total.tokensIn),
     formatTokens(total.cacheRead),
     formatTokens(total.cacheWrite),
     formatTokens(total.tokensOut),
-    formatDecimal(personSessions ?? total.sessions),
+    formatDecimal(sessions),
   ]
 }
