@@ -199,18 +199,23 @@ test('groups the tables by provider and keeps the choice in the URL', async ({ p
   const leo = page.getByRole('region', { name: /Consommation Hermes leo par fournisseur/ })
   await expect(leo.getByRole('button', { name: 'Déplier Sans fournisseur' })).toBeVisible()
 
+  await expect(page.getByRole('heading', { name: 'Fournisseurs Bifrost' })).toBeVisible()
+  await expect(page.getByText('Regroupement des tableaux', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Les cartes et la courbe restent par clé.', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('Courbe toujours par clé Bifrost').first()).toBeVisible()
+
   await byKey.click()
   await expect(page).toHaveURL(/group=key/)
   await expect(page.getByRole('button', { name: 'Déplier tailscale-noe' })).toBeVisible()
 
-  await page.goBack()
-  await expect(page).toHaveURL(/group=provider/)
-  await expect(byProvider).toHaveAttribute('aria-pressed', 'true')
-  // Expansion is client state, so the row opened before the back navigation stays open.
-  await expect(
-    bifrost.getByRole('button', { name: /^(Déplier|Replier) opencode-go$/ }),
-  ).toBeVisible()
-  await expect(bifrost.getByText('deepseek-v4.1-flash', { exact: true })).toBeVisible()
+  // Grouping replaces the current history entry so it does not bury period and source.
+  const historyLength = await page.evaluate(() => history.length)
+  await byProvider.click()
+  await byKey.click()
+  expect(await page.evaluate(() => history.length)).toBe(historyLength)
+  await expect(page).toHaveURL(/group=key/)
 })
 
 test('a slow filter change keeps previous data visible and announces the update', async ({

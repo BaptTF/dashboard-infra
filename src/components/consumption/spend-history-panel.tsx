@@ -111,7 +111,7 @@ export function SpendHistoryPanel({
           Courbe de coût Bifrost (UTC)
         </span>
       }
-      description={`${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; cliquez une clé dans la légende pour la masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
+      description={`Courbe toujours par clé Bifrost : le regroupement des tableaux ne la change pas. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; cliquez une clé dans la légende pour la masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
       actions={
         series.length > 0 ? (
           <span className="text-muted-foreground text-[11px]">

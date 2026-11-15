@@ -45,6 +45,10 @@ export interface SpendViewRow {
   tokensIn: number
   tokensOut: number
   cacheRead: number
+  /** Set on a provider grouping's top rows: 1 is the most expensive. */
+  rank?: number
+  /** Share of the top-level cost in a provider grouping. */
+  shareOfCost?: number
   children: SpendViewRow[]
 }
 
@@ -67,7 +71,7 @@ function personToRow(person: PersonSpend): SpendViewRow {
 function providerToRow(person: string, provider: ProviderSpend): SpendViewRow {
   return {
     id: `provider:${person}:${provider.provider}`,
-    label: provider.provider || 'Fournisseur inconnu',
+    label: provider.provider || 'Sans fournisseur',
     kind: 'provider',
     origin: 'bifrost',
     provider: provider.provider,
@@ -149,7 +153,7 @@ export function groupSpendByProvider(rows: SpendViewRow[]): SpendViewRow[] {
     }
   }
   for (const group of groups.values()) group.children.sort(bySpendCost)
-  return [...groups.values()].sort(bySpendCost)
+  return assignRanks([...groups.values()].sort(bySpendCost), (row) => row.cost)
 }
 
 export interface HermesViewRow {
@@ -165,6 +169,15 @@ export interface HermesViewRow {
   cacheRead: number
   cacheWrite: number
   sessions: number
+  /** Set on a provider grouping's top rows: 1 is the most expensive. */
+  rank?: number
+  /** Share of the top-level cost in a provider grouping. */
+  shareOfCost?: number
+  /**
+   * `detail` hides the rolled-up session count: model sessions must not be
+   * added to the once-per-person total. The breakdown stays on the children.
+   */
+  sessionsDisplay?: 'amount' | 'detail'
   children: HermesViewRow[]
 }
 
@@ -197,7 +210,7 @@ function leoProvider(parentId: string, source: string, provider: LeoProvider): H
   const id = `${parentId}:provider:${provider.provider}`
   return {
     id,
-    label: provider.provider || 'Fournisseur inconnu',
+    label: provider.provider || 'Sans fournisseur',
     source,
     kind: 'provider',
     provider: provider.provider,
@@ -312,6 +325,7 @@ export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
         cacheRead: 0,
         cacheWrite: 0,
         sessions: 0,
+        sessionsDisplay: key === UNATTRIBUTED_PROVIDER ? 'amount' : 'detail',
         children: [],
       }
       groups.set(key, group)
@@ -325,7 +339,9 @@ export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
     group.tokensOut += child.tokensOut
     group.cacheRead += child.cacheRead
     group.cacheWrite += child.cacheWrite
-    group.sessions += child.sessions
+    // Model sessions stay on the children. Adding them here would make the
+    // provider total look larger than the once-per-person session count.
+    if (group.sessionsDisplay !== 'detail') group.sessions += child.sessions
     group.children.push(child)
   }
 
@@ -352,5 +368,17 @@ export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
   }
 
   for (const group of groups.values()) group.children.sort(byHermesCost)
-  return [...groups.values()].sort(byHermesCost)
+  return assignRanks([...groups.values()].sort(byHermesCost), (row) => row.costUsd)
+}
+
+function assignRanks<T extends { rank?: number; shareOfCost?: number }>(
+  rows: T[],
+  cost: (row: T) => number,
+): T[] {
+  const total = rows.reduce((sum, row) => sum + cost(row), 0)
+  for (const [index, row] of rows.entries()) {
+    row.rank = index + 1
+    row.shareOfCost = total > 0 ? cost(row) / total : undefined
+  }
+  return rows
 }

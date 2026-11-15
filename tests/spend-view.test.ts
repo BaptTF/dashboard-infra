@@ -72,12 +72,10 @@ describe('groupSpendByProvider', () => {
   it('lifts opencode-go above the keys and sorts providers by cost', () => {
     const grouped = groupSpendByProvider(rows)
 
-    expect(grouped.map((row) => row.label)).toEqual([
-      'opencode-go',
-      'bedrock',
-      'Fournisseur inconnu',
-    ])
+    expect(grouped.map((row) => row.label)).toEqual(['opencode-go', 'bedrock', 'Sans fournisseur'])
     const opencode = grouped[0]
+    expect(opencode?.rank).toBe(1)
+    expect(opencode?.shareOfCost).toBeCloseTo(11 / 18)
     expect(opencode?.cost).toBe(11)
     expect(opencode?.tokensIn).toBe(40)
     expect(opencode?.tokensOut).toBe(3)
@@ -162,8 +160,13 @@ describe('groupHermesByProvider', () => {
     expect(grouped.map((row) => row.label)).toEqual(['opencode-go', 'custom', 'Sans fournisseur'])
     const opencode = grouped[0]
     expect(opencode?.costUsd).toBeCloseTo(42.7)
-    expect(opencode?.sessions).toBe(17)
-    expect(opencode?.children.map((row) => row.label)).toEqual(['Camille', 'Hors Telegram'])
+    expect(opencode?.rank).toBe(1)
+    expect(opencode?.sessionsDisplay).toBe('detail')
+    expect(opencode?.sessions).toBe(0)
+    expect(opencode?.children.map((row) => [row.label, row.sessions])).toEqual([
+      ['Camille', 14],
+      ['Hors Telegram', 3],
+    ])
     const unattributed = grouped[2]
     expect(unattributed?.costUsd).toBeCloseTo(0.2)
     expect(unattributed?.sessions).toBe(40)

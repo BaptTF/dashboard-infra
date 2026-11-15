@@ -182,21 +182,32 @@ function ConsumptionPage() {
           return (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground text-xs font-medium">Source</span>
                 <TimeRangePicker
                   param="source"
                   value={search.source}
                   options={sourceOptions}
                   label="Source de consommation"
                 />
+              </div>
+
+              <SpendSummary report={data} source={search.source} />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground text-xs font-medium">
+                  Regroupement des tableaux
+                </span>
                 <TimeRangePicker
                   param="group"
                   value={search.group}
                   options={groupOptions}
-                  label="Regroupement"
+                  label="Regroupement des tableaux"
+                  history="replace"
                 />
+                <span className="text-muted-foreground text-xs">
+                  Les cartes et la courbe restent par clé.
+                </span>
               </div>
-
-              <SpendSummary report={data} source={search.source} />
 
               {filteredHasData ? (
                 <>

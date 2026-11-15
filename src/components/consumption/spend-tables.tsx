@@ -3,7 +3,13 @@ import { DataTable, type DataTableColumn } from '~/components/data-table'
 import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
 import { Badge } from '~/components/ui/badge'
-import { formatCurrency, formatDecimal, formatTokens, formatTokensExact } from '~/lib/format'
+import {
+  formatCurrency,
+  formatDecimal,
+  formatPercent,
+  formatTokens,
+  formatTokensExact,
+} from '~/lib/format'
 import {
   buildHermesRows,
   buildSpendRows,
@@ -13,9 +19,40 @@ import {
   type SpendGrouping,
   type SpendViewRow,
 } from '~/lib/spend-view'
+import { cn } from '~/lib/utils'
 import type { LeoUser, SpendReport } from '~/lib/types'
 
 const secondary = 'hidden md:table-cell'
+
+function RowLabel({
+  label,
+  depth,
+  rank,
+  share,
+}: {
+  label: string
+  depth: number
+  rank?: number
+  share?: number
+}) {
+  return (
+    <p
+      className={cn(
+        'break-words',
+        depth === 0 && 'text-sm font-semibold',
+        depth === 1 && 'text-sm font-medium',
+        depth >= 2 && 'text-muted-foreground text-[13px] font-normal',
+      )}
+    >
+      {label}
+      {depth === 0 && rank != null && share != null ? (
+        <span className="text-muted-foreground ml-2 text-[11px] font-normal">
+          #{rank} · {formatPercent(share)}
+        </span>
+      ) : null}
+    </p>
+  )
+}
 
 function MobileStat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
@@ -33,9 +70,9 @@ function spendColumns(grouping: SpendGrouping): DataTableColumn<SpendViewRow>[] 
     {
       key: 'name',
       header: grouping === 'provider' ? 'Fournisseur · clé · modèle' : 'Clé · fournisseur · modèle',
-      cell: (row) => (
+      cell: (row, depth) => (
         <div>
-          <p className="text-sm font-medium break-words">{row.label}</p>
+          <RowLabel label={row.label} depth={depth} rank={row.rank} share={row.shareOfCost} />
           {row.kind === 'model' &&
           row.cost > 0 &&
           row.tokensIn + row.tokensOut + row.cacheRead === 0 ? (
@@ -44,7 +81,7 @@ function spendColumns(grouping: SpendGrouping): DataTableColumn<SpendViewRow>[] 
               className="mt-1"
               title="Coût reconstruit sans compteur de tokens associé"
             >
-              coût seul
+              coût seul, sans tokens
             </Badge>
           ) : null}
           <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
@@ -120,9 +157,9 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
         grouping === 'provider'
           ? 'Fournisseur · personne · modèle'
           : 'Personne · fournisseur · modèle',
-      cell: (row) => (
+      cell: (row, depth) => (
         <div>
-          <p className="text-sm font-medium break-words">{row.label}</p>
+          <RowLabel label={row.label} depth={depth} rank={row.rank} share={row.shareOfCost} />
           <dl className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] md:hidden">
             <MobileStat
               label="Entrée"
@@ -211,7 +248,19 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
       align: 'right',
       className: secondary,
       headerClassName: secondary,
-      cell: (row) => <span className="tnum">{formatDecimal(row.sessions)}</span>,
+      cell: (row) =>
+        row.sessionsDisplay === 'detail' ? (
+          <span
+            className="text-muted-foreground text-xs"
+            title="Détail par modèle, visible en dépliant. Ces sessions ne s'ajoutent pas au total des personnes."
+          >
+            détail
+          </span>
+        ) : (
+          <span className="tnum" title="Sessions comptées une fois pour cette ligne.">
+            {formatDecimal(row.sessions)}
+          </span>
+        ),
     },
   ]
 }
@@ -231,20 +280,24 @@ export function BifrostTable({
   const rows = grouping === 'provider' ? groupSpendByProvider(byKey) : byKey
   const scope =
     onlyKeys && onlyKeys.length === 1
-      ? `Vue limitée à la clé ${onlyKeys[0]}. `
+      ? grouping === 'provider'
+        ? `Une seule clé (${onlyKeys[0]}) : les fournisseurs classent ses modèles. `
+        : `Vue limitée à la clé ${onlyKeys[0]}. `
       : 'Toutes les clés, hermes-leo et hermes-lea incluses. '
   const grouped =
-    grouping === 'provider' ? 'Regroupé par fournisseur, du plus coûteux au moins coûteux. ' : ''
+    grouping === 'provider'
+      ? 'Regroupé par fournisseur, du plus coûteux au moins coûteux, avec le rang et la part du coût. '
+      : ''
 
   return (
     <Panel
       title={
         <span className="flex items-center gap-2">
           <Database className="size-3.5" aria-hidden="true" />
-          Clés Bifrost
+          {grouping === 'provider' ? 'Fournisseurs Bifrost' : 'Clés Bifrost'}
         </span>
       }
-      description={`${grouped}${scope}La vue Hermes par personne est une source distincte, jamais ajoutée.`}
+      description={`${grouped}${scope}La vue Hermes par personne est une source distincte, jamais ajoutée. Les cartes et la courbe restent par clé.`}
     >
       {rows.length === 0 ? (
         <EmptyState
@@ -265,10 +318,30 @@ export function BifrostTable({
           getRowId={(row) => row.id}
           getRowLabel={(row) => row.label}
           getSubRows={(row) => row.children}
+          footer={spendFooter(rows)}
         />
       )}
     </Panel>
   )
+}
+
+function spendFooter(rows: SpendViewRow[]) {
+  const total = rows.reduce(
+    (sum, row) => ({
+      cost: sum.cost + row.cost,
+      tokensIn: sum.tokensIn + row.tokensIn,
+      tokensOut: sum.tokensOut + row.tokensOut,
+      cacheRead: sum.cacheRead + row.cacheRead,
+    }),
+    { cost: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0 },
+  )
+  return [
+    'Total',
+    formatCurrency(total.cost),
+    formatTokens(total.tokensIn),
+    formatTokens(total.cacheRead),
+    formatTokens(total.tokensOut),
+  ]
 }
 
 export function HermesTable({
@@ -290,18 +363,21 @@ export function HermesTable({
 }) {
   const byPerson = buildHermesRows(users, other, otherLabel)
   const rows = grouping === 'provider' ? groupHermesByProvider(byPerson) : byPerson
+  const personSessions = byPerson.reduce((sum, row) => sum + row.sessions, 0)
+  const heading =
+    grouping === 'provider' ? `Hermes ${agent === 'leo' ? 'Léo' : 'Léa'} · fournisseurs` : title
 
   return (
     <Panel
       title={
         <span className="flex items-center gap-2">
           <Users className="size-3.5" aria-hidden="true" />
-          {title}
+          {heading}
         </span>
       }
       description={
         grouping === 'provider'
-          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description}`
+          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description} Le total des sessions compte chaque session une fois ; « détail » ouvre le décompte par modèle, qui ne s'y ajoute pas.`
           : description
       }
     >
@@ -324,8 +400,32 @@ export function HermesTable({
           getRowId={(row) => row.id}
           getRowLabel={(row) => row.label}
           getSubRows={(row) => row.children}
+          footer={hermesFooter(rows, grouping === 'provider' ? personSessions : undefined)}
         />
       )}
     </Panel>
   )
+}
+
+function hermesFooter(rows: HermesViewRow[], personSessions?: number) {
+  const total = rows.reduce(
+    (sum, row) => ({
+      costUsd: sum.costUsd + row.costUsd,
+      tokensIn: sum.tokensIn + row.tokensIn,
+      tokensOut: sum.tokensOut + row.tokensOut,
+      cacheRead: sum.cacheRead + row.cacheRead,
+      cacheWrite: sum.cacheWrite + row.cacheWrite,
+      sessions: sum.sessions + row.sessions,
+    }),
+    { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, sessions: 0 },
+  )
+  return [
+    'Total',
+    formatCurrency(total.costUsd),
+    formatTokens(total.tokensIn),
+    formatTokens(total.cacheRead),
+    formatTokens(total.cacheWrite),
+    formatTokens(total.tokensOut),
+    formatDecimal(personSessions ?? total.sessions),
+  ]
 }

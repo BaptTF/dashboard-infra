@@ -4,6 +4,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -28,6 +29,7 @@ export function DataTable<T>({
   getRowLabel,
   getSubRows,
   emptyLabel = 'Aucune ligne à afficher',
+  footer,
   className,
 }: {
   caption: string
@@ -37,6 +39,8 @@ export function DataTable<T>({
   getRowLabel: (row: T) => string
   getSubRows?: (row: T) => T[]
   emptyLabel?: string
+  /** One cell per column, aligned with `columns`. Hidden with the column on small screens. */
+  footer?: ReactNode[]
   className?: string
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -60,7 +64,7 @@ export function DataTable<T>({
 
     return (
       <Fragment key={rowKey}>
-        <TableRow className={cn(depth > 0 && 'bg-muted/20')}>
+        <TableRow className={cn(depth === 0 ? 'bg-muted/25' : 'bg-background')}>
           {columns.map((column, index) => {
             const className = cn(
               column.align === 'right' && 'text-right',
@@ -71,8 +75,10 @@ export function DataTable<T>({
               return (
                 <TableRowHeader key={column.key} className={className}>
                   <div
-                    className="flex items-center gap-1.5"
-                    style={{ paddingLeft: `${depth * 16}px` }}
+                    className={cn(
+                      'flex items-center gap-1.5',
+                      ['', 'pl-1.5 sm:pl-4', 'pl-3 sm:pl-8', 'pl-5 sm:pl-12'][Math.min(depth, 3)],
+                    )}
                   >
                     {hasChildren ? (
                       <button
@@ -142,6 +148,33 @@ export function DataTable<T>({
             rows.map((row) => renderRows(row, 0, []))
           )}
         </TableBody>
+        {footer && rows.length > 0 ? (
+          <TableFooter>
+            <TableRow className="hover:bg-transparent">
+              {footer.map((cell, index) => {
+                const column = columns[index]
+                if (!column) return null
+                const className = cn(
+                  column.align === 'right' && 'text-right',
+                  column.className,
+                  'font-medium',
+                )
+                if (index === 0) {
+                  return (
+                    <TableRowHeader key={column.key} className={className}>
+                      {cell}
+                    </TableRowHeader>
+                  )
+                }
+                return (
+                  <TableCell key={column.key} className={className}>
+                    {cell}
+                  </TableCell>
+                )
+              })}
+            </TableRow>
+          </TableFooter>
+        ) : null}
       </Table>
     </div>
   )

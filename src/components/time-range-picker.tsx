@@ -15,6 +15,7 @@ export function TimeRangePicker({
   label,
   className,
   size = 'default',
+  history = 'push',
 }: {
   param: string
   value: string
@@ -22,6 +23,8 @@ export function TimeRangePicker({
   label: string
   className?: string
   size?: 'default' | 'sm'
+  /** `replace` keeps period and source history from filling up while toggling. */
+  history?: 'push' | 'replace'
 }) {
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Record<string, unknown>
@@ -50,7 +53,7 @@ export function TimeRangePicker({
     void navigate({
       to: '.',
       search: { ...search, [param]: next },
-      replace: false,
+      replace: history === 'replace',
       resetScroll: false,
     })
       .catch(() => undefined)
