@@ -174,10 +174,11 @@ export interface HermesViewRow {
   /** Share of the top-level cost in a provider grouping. */
   shareOfCost?: number
   /**
-   * `detail` hides the rolled-up session count: model sessions must not be
-   * added to the once-per-person total. The breakdown stays on the children.
+   * `detail` hides a rolled-up count: model sessions stay on the children.
+   * `scoped` is a person under one provider: the count is for that provider,
+   * not the person's once-per-person total, and it does not add into the footer.
    */
-  sessionsDisplay?: 'amount' | 'detail'
+  sessionsDisplay?: 'amount' | 'detail' | 'scoped'
   children: HermesViewRow[]
 }
 
@@ -361,6 +362,7 @@ export function groupHermesByProvider(rows: HermesViewRow[]): HermesViewRow[] {
         cacheRead: provider.cacheRead,
         cacheWrite: provider.cacheWrite,
         sessions: provider.sessions,
+        sessionsDisplay: 'scoped',
         children: provider.children,
       })
     }

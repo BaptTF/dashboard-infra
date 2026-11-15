@@ -149,6 +149,30 @@ function spendColumns(grouping: SpendGrouping): DataTableColumn<SpendViewRow>[] 
   ]
 }
 
+function sessionFact(row: HermesViewRow): { label: string; value: string; title: string } {
+  if (row.sessionsDisplay === 'detail') {
+    return {
+      label: 'Sessions',
+      value: 'détail',
+      title:
+        "Détail par modèle, visible en dépliant. Ces sessions ne s'ajoutent pas au total des personnes.",
+    }
+  }
+  if (row.sessionsDisplay === 'scoped') {
+    return {
+      label: 'Sessions fournisseur',
+      value: formatDecimal(row.sessions),
+      title:
+        "Sessions de cette personne pour ce fournisseur seulement. Ce n'est pas son total, et ces lignes ne s'ajoutent pas au pied.",
+    }
+  }
+  return {
+    label: 'Sessions',
+    value: formatDecimal(row.sessions),
+    title: 'Sessions comptées une fois pour cette ligne.',
+  }
+}
+
 function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[] {
   return [
     {
@@ -182,13 +206,9 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
               title={formatTokensExact(row.tokensOut)}
             />
             <MobileStat
-              label="Sessions"
-              value={row.sessionsDisplay === 'detail' ? 'détail' : formatDecimal(row.sessions)}
-              title={
-                row.sessionsDisplay === 'detail'
-                  ? "Détail par modèle, visible en dépliant. Ces sessions ne s'ajoutent pas au total des personnes."
-                  : 'Sessions comptées une fois pour cette ligne.'
-              }
+              label={sessionFact(row).label}
+              value={sessionFact(row).value}
+              title={sessionFact(row).title}
             />
           </dl>
         </div>
@@ -256,19 +276,31 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
       align: 'right',
       className: secondary,
       headerClassName: secondary,
-      cell: (row) =>
-        row.sessionsDisplay === 'detail' ? (
-          <span
-            className="text-muted-foreground text-xs"
-            title="Détail par modèle, visible en dépliant. Ces sessions ne s'ajoutent pas au total des personnes."
-          >
-            détail
+      cell: (row) => {
+        const fact = sessionFact(row)
+        if (row.sessionsDisplay === 'detail') {
+          return (
+            <span className="text-muted-foreground text-xs" title={fact.title}>
+              {fact.value}
+            </span>
+          )
+        }
+        if (row.sessionsDisplay === 'scoped') {
+          return (
+            <span className="tnum" title={fact.title}>
+              {fact.value}
+              <span className="text-muted-foreground ml-1 text-[11px] font-normal">
+                fournisseur
+              </span>
+            </span>
+          )
+        }
+        return (
+          <span className="tnum" title={fact.title}>
+            {fact.value}
           </span>
-        ) : (
-          <span className="tnum" title="Sessions comptées une fois pour cette ligne.">
-            {formatDecimal(row.sessions)}
-          </span>
-        ),
+        )
+      },
     },
   ]
 }
@@ -385,7 +417,7 @@ export function HermesTable({
       }
       description={
         grouping === 'provider'
-          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description} Le total des sessions compte chaque session une fois ; « détail » ouvre le décompte par modèle, qui ne s'y ajoute pas.`
+          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description} Le pied compte chaque session de personne une fois. Sous un fournisseur, « fournisseur » marque les sessions de cette personne pour ce fournisseur : ce n'est pas son total, et ces lignes ne s'ajoutent pas au pied. « détail » ouvre le décompte par modèle.`
           : description
       }
     >

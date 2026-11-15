@@ -163,10 +163,12 @@ describe('groupHermesByProvider', () => {
     expect(opencode?.rank).toBe(1)
     expect(opencode?.sessionsDisplay).toBe('detail')
     expect(opencode?.sessions).toBe(0)
-    expect(opencode?.children.map((row) => [row.label, row.sessions])).toEqual([
-      ['Camille', 14],
-      ['Hors Telegram', 3],
-    ])
+    expect(opencode?.children.map((row) => [row.label, row.sessions, row.sessionsDisplay])).toEqual(
+      [
+        ['Camille', 14, 'scoped'],
+        ['Hors Telegram', 3, 'scoped'],
+      ],
+    )
     const unattributed = grouped[2]
     expect(unattributed?.costUsd).toBeCloseTo(0.2)
     expect(unattributed?.sessions).toBe(0)
