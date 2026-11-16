@@ -111,7 +111,7 @@ function renderStackedBar(
   api: {
     value: (index: number) => unknown
     coord: (value: number[]) => number[]
-    style: () => object
+    visual: (key: string) => unknown
   },
 ) {
   const value = Number(api.value(1))
@@ -131,10 +131,14 @@ function renderStackedBar(
   const right = Math.min(x0 + width, bounds.x + bounds.width)
   const bottom = Math.min(y0 + height, bounds.y + bounds.height)
   if (right <= left || bottom <= top) return undefined
+  const fill = api.visual('color')
   return {
     type: 'rect' as const,
+    // Custom shapes ignore series.emphasis.disabled. Without this flag the
+    // hover state fades every other bar, which reads as flicker.
+    emphasisDisabled: true,
     shape: { x: left, y: top, width: right - left, height: bottom - top },
-    style: api.style(),
+    style: { fill: typeof fill === 'string' ? fill : fallbackPalette[0], opacity: 1 },
   }
 }
 
@@ -277,6 +281,7 @@ export function Chart({
     const option = {
       animation: !reducedMotion,
       animationDuration: 400,
+      stateAnimation: variant === 'bar' ? { duration: 0 } : undefined,
       // Time-axis ticks must follow the same clock as the labels. Without this,
       // ECharts places ticks on Paris midnight while the formatter prints UTC.
       useUTC: xLabelMode === 'utc-day' || xLabelMode === 'utc-time',
