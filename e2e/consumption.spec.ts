@@ -200,11 +200,14 @@ test('groups the tables by provider and keeps the choice in the URL', async ({ p
   await expect(leo.getByRole('button', { name: 'Déplier Sans fournisseur' })).toBeVisible()
 
   await expect(page.getByRole('heading', { name: 'Fournisseurs Bifrost' })).toBeVisible()
-  await expect(page.getByText('Regroupement des tableaux', { exact: true })).toBeVisible()
+  await expect(page.getByText('Regroupement', { exact: true })).toBeVisible()
   await expect(
-    page.getByText('Les cartes et la courbe restent par clé.', { exact: true }),
+    page.getByText('La courbe Bifrost suit les fournisseurs. Les cartes restent par clé.', {
+      exact: true,
+    }),
   ).toBeVisible()
-  await expect(page.getByText('Courbe toujours par clé Bifrost').first()).toBeVisible()
+  await expect(page.getByText('Courbe par fournisseur Bifrost').first()).toBeVisible()
+  await expect(page.locator('[data-data-key^="bifrost-1m-hour-provider"]')).toBeVisible()
 
   await byKey.click()
   await expect(page).toHaveURL(/group=key/)

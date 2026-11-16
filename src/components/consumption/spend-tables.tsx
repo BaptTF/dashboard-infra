@@ -344,7 +344,11 @@ export function BifrostTable({
           {grouping === 'provider' ? 'Fournisseurs Bifrost' : 'Clés Bifrost'}
         </span>
       }
-      description={`${grouped}${scope}La vue Hermes par personne est une source distincte, jamais ajoutée. Les cartes et la courbe restent par clé.`}
+      description={`${grouped}${scope}La vue Hermes par personne est une source distincte, jamais ajoutée. ${
+        grouping === 'provider'
+          ? 'La courbe Bifrost suit les fournisseurs. Les cartes restent par clé.'
+          : 'Les cartes et la courbe suivent les clés.'
+      }`}
     >
       {rows.length === 0 ? (
         <EmptyState

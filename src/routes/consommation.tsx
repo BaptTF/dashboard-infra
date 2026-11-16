@@ -68,12 +68,12 @@ const groupOptions = [
   {
     value: 'key',
     label: 'Par clé',
-    title: 'Une ligne par clé Bifrost ou par personne Hermes, puis le fournisseur',
+    title: 'Une ligne et une courbe par clé Bifrost, puis le fournisseur',
   },
   {
     value: 'provider',
     label: 'Par fournisseur',
-    title: 'Une ligne par fournisseur, par exemple opencode-go, puis la clé ou la personne',
+    title: 'Une ligne et une courbe par fournisseur, par exemple opencode-go',
   },
 ] as const
 
@@ -161,7 +161,11 @@ function ConsumptionPage() {
                   description={`La fenêtre ${spendWindowLabel(data.window)} ne contient aucun compteur Bifrost ni aucune jauge Hermes.`}
                   icon={Database}
                 />
-                <SpendHistoryPanel query={historyQuery} windowLabel={data.windowLabel} />
+                <SpendHistoryPanel
+                  query={historyQuery}
+                  windowLabel={data.windowLabel}
+                  grouping={search.group}
+                />
               </div>
             )
           }
@@ -194,18 +198,18 @@ function ConsumptionPage() {
               <SpendSummary report={data} source={search.source} />
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground text-xs font-medium">
-                  Regroupement des tableaux
-                </span>
+                <span className="text-muted-foreground text-xs font-medium">Regroupement</span>
                 <TimeRangePicker
                   param="group"
                   value={search.group}
                   options={groupOptions}
-                  label="Regroupement des tableaux"
+                  label="Regroupement de la courbe et des tableaux"
                   history="replace"
                 />
                 <span className="text-muted-foreground text-xs">
-                  Les cartes et la courbe restent par clé.
+                  {search.group === 'provider'
+                    ? 'La courbe Bifrost suit les fournisseurs. Les cartes restent par clé.'
+                    : 'La courbe Bifrost suit les clés. Les cartes restent par clé.'}
                 </span>
               </div>
 
@@ -270,7 +274,7 @@ function ConsumptionPage() {
                   query={historyQuery}
                   windowLabel={data.windowLabel}
                   onlyKeys={selectedKey ? [selectedKey] : undefined}
-                  filterLabel={selectedKey ?? undefined}
+                  grouping={search.group}
                 />
               ) : null}
 

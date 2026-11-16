@@ -7,6 +7,7 @@ import {
   HISTORY_REFERENCE_DAYS,
   makeReport,
   reconstructBifrostCost,
+  groupSpendCurveByProvider,
   spendHistoryPlan,
   spendHistoryPointTimestamp,
   sumLeo,
@@ -550,6 +551,53 @@ describe('Bifrost cost reconstruction', () => {
     expect(result.series[0]?.points).toEqual([
       { timestamp: Date.UTC(2026, 10, 9, 23, 59) / 1000, value: 0.75 },
     ])
+  })
+
+  it('sums the provider curve across keys and keeps an empty provider visible', () => {
+    const result = reconstructBifrostCost(
+      [
+        row({ virtual_key_name: 'atlas', provider: 'opencode-go', model: 'a', backfill: '' }, [
+          ['2026-11-05T10:00:00Z', 4],
+        ]),
+        row({ virtual_key_name: 'hermes-leo', provider: 'opencode-go', model: 'b', backfill: '' }, [
+          ['2026-11-05T10:00:00Z', 7],
+        ]),
+        row({ virtual_key_name: 'atlas', provider: 'bedrock', model: 'c', backfill: '' }, [
+          ['2026-11-05T11:00:00Z', 2],
+        ]),
+        row({ virtual_key_name: 'atlas', provider: '', model: '', backfill: '' }, [
+          ['2026-11-05T12:00:00Z', 1],
+        ]),
+      ],
+      plan,
+    )
+    const grouped = groupSpendCurveByProvider(result.providerSlices)
+    expect(
+      grouped.map((entry) => [
+        entry.label,
+        entry.points.reduce((sum, point) => sum + point.value, 0),
+      ]),
+    ).toEqual([
+      ['opencode-go', 11],
+      ['bedrock', 2],
+      ['Sans fournisseur', 1],
+    ])
+    const atlas = groupSpendCurveByProvider(result.providerSlices, ['atlas'])
+    expect(atlas.map((entry) => entry.label)).toEqual([
+      'opencode-go',
+      'bedrock',
+      'Sans fournisseur',
+    ])
+    expect(atlas[0]?.points.reduce((sum, point) => sum + point.value, 0)).toBe(4)
+    const keyTotal = result.series.reduce(
+      (sum, entry) => sum + entry.points.reduce((total, point) => total + point.value, 0),
+      0,
+    )
+    const providerTotal = grouped.reduce(
+      (sum, entry) => sum + entry.points.reduce((total, point) => total + point.value, 0),
+      0,
+    )
+    expect(providerTotal).toBeCloseTo(keyTotal)
   })
 
   it('includes hermes-leo and hermes-lea like any other Bifrost key', () => {

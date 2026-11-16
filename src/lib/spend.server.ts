@@ -166,6 +166,7 @@ export async function fetchSpendHistory(
     granularity: plan.granularity,
     window: id,
     series: [],
+    providerSlices: [],
     firstSampleAt: null,
   }
   if (!client || !config.configured) return base
@@ -173,7 +174,7 @@ export async function fetchSpendHistory(
 
   try {
     const rows = await fetchBifrostCostRows(client, plan)
-    const { series } = reconstructBifrostCost(rows, plan)
+    const { series, providerSlices } = reconstructBifrostCost(rows, plan)
     let first = Number.POSITIVE_INFINITY
     for (const entry of series) {
       for (const point of entry.points) {
@@ -183,6 +184,7 @@ export async function fetchSpendHistory(
     return {
       ...base,
       series,
+      providerSlices,
       firstSampleAt: Number.isFinite(first) ? new Date(first * 1000).toISOString() : null,
     }
   } catch (error) {

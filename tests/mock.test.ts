@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { PrometheusClient } from '~/lib/prometheus.server'
 import {
   buildSpendCostQuery,
+  groupSpendCurveByProvider,
   reconstructBifrostCost,
   spendHistoryPlan,
   sumPeople,
@@ -319,6 +320,11 @@ describe('report and history share one Bifrost cost truth', () => {
         0,
       )
       expect(bifrost).toBeCloseTo(curve)
+      const providerCurve = groupSpendCurveByProvider(history.providerSlices).reduce(
+        (sum, entry) => sum + entry.points.reduce((total, point) => total + point.value, 0),
+        0,
+      )
+      expect(providerCurve).toBeCloseTo(curve)
       // Hermes views are a second presentation, never an extra amount.
       expect(report.leo.length).toBeGreaterThan(0)
       expect(report.lea.length).toBeGreaterThan(0)

@@ -13,6 +13,7 @@ import type {
   SpendGranularity,
   SpendOrigin,
   SpendPersonDailySeries,
+  SpendProviderSlice,
   SpendReport,
   SpendWindow,
   Totals,
@@ -145,6 +146,8 @@ export function spendHistoryPointTimestamp(evaluationSeconds: number): number {
 
 export interface BifrostCostReconstruction {
   series: SpendPersonDailySeries[]
+  /** Same deltas as `series`, kept per key and provider. */
+  providerSlices: SpendProviderSlice[]
   /** One sample per key/provider/model, used as the Bifrost cost totals. */
   samples: MetricSample[]
 }
@@ -162,8 +165,8 @@ export interface BifrostCostReconstruction {
  * - a decrease is a reset (delta = current value);
  * - live deltas are bucketed at the period granularity; backfill stays daily
  *   (its real resolution) and is dated at the end of the consumed UTC day;
- * - deltas are summed by key for the curve and by key/provider/model for the
- *   report.
+ * - deltas are summed by key for the key curve, by key and provider for the
+ *   provider curve, and by key/provider/model for the report.
  *
  * Each series keeps its provider/model/backfill identity, so a new series that
  * appears with a high cumulative value cannot create a false drop or spike.
@@ -176,6 +179,7 @@ export function reconstructBifrostCost(
   plan: SpendHistoryPlan,
 ): BifrostCostReconstruction {
   const byKey = new Map<string, Map<number, number>>()
+  const bySlice = new Map<string, Map<number, number>>()
   const byModel = new Map<string, { labels: MetricSample['labels']; cost: number }>()
   const toSeconds = plan.to.getTime() / 1000
   const fromSeconds = plan.from.getTime() / 1000
@@ -224,12 +228,8 @@ export function reconstructBifrostCost(
       }
       if (bucket > toSeconds) continue
 
-      let buckets = byKey.get(virtualKey)
-      if (!buckets) {
-        buckets = new Map()
-        byKey.set(virtualKey, buckets)
-      }
-      buckets.set(bucket, (buckets.get(bucket) ?? 0) + delta)
+      addCurveDelta(byKey, virtualKey, bucket, delta)
+      addCurveDelta(bySlice, `${virtualKey}\u0000${provider}`, bucket, delta)
       const aggregate = byModel.get(modelId)
       if (aggregate) aggregate.cost += delta
       else
@@ -242,9 +242,7 @@ export function reconstructBifrostCost(
 
   const series: SpendPersonDailySeries[] = []
   for (const [virtualKey, buckets] of byKey) {
-    const points: MetricPoint[] = [...buckets]
-      .sort((a, b) => a[0] - b[0])
-      .map(([timestamp, value]) => ({ timestamp, value }))
+    const points = curvePoints(buckets)
     if (points.length > 0) series.push({ virtualKey, points })
   }
   series.sort((a, b) => {
@@ -253,12 +251,71 @@ export function reconstructBifrostCost(
     return totalB - totalA || a.virtualKey.localeCompare(b.virtualKey, 'fr')
   })
 
+  const providerSlices: SpendProviderSlice[] = []
+  for (const [id, buckets] of bySlice) {
+    const split = id.indexOf('\u0000')
+    const points = curvePoints(buckets)
+    if (points.length === 0) continue
+    providerSlices.push({
+      virtualKey: id.slice(0, split),
+      provider: id.slice(split + 1),
+      points,
+    })
+  }
+
   return {
     series,
+    providerSlices,
     samples: [...byModel.values()]
       .filter((entry) => entry.cost > 0)
       .map((entry) => ({ labels: entry.labels, value: entry.cost })),
   }
+}
+
+function addCurveDelta(
+  target: Map<string, Map<number, number>>,
+  id: string,
+  bucket: number,
+  delta: number,
+) {
+  let buckets = target.get(id)
+  if (!buckets) {
+    buckets = new Map()
+    target.set(id, buckets)
+  }
+  buckets.set(bucket, (buckets.get(bucket) ?? 0) + delta)
+}
+
+function curvePoints(buckets: Map<number, number>): MetricPoint[] {
+  return [...buckets]
+    .sort((a, b) => a[0] - b[0])
+    .map(([timestamp, value]) => ({ timestamp, value }))
+}
+
+/** Sums key/provider slices into one series per provider. An empty provider is « Sans fournisseur ». */
+export function groupSpendCurveByProvider(
+  slices: SpendProviderSlice[],
+  onlyKeys?: string[],
+): { label: string; points: MetricPoint[] }[] {
+  const selected = onlyKeys ? slices.filter((slice) => onlyKeys.includes(slice.virtualKey)) : slices
+  const byProvider = new Map<string, Map<number, number>>()
+  for (const slice of selected) {
+    const label = slice.provider || 'Sans fournisseur'
+    for (const point of slice.points) {
+      addCurveDelta(byProvider, label, point.timestamp, point.value)
+    }
+  }
+  const series: { label: string; points: MetricPoint[] }[] = []
+  for (const [label, buckets] of byProvider) {
+    const points = curvePoints(buckets)
+    if (points.length > 0) series.push({ label, points })
+  }
+  series.sort((a, b) => {
+    const totalA = a.points.reduce((sum, point) => sum + point.value, 0)
+    const totalB = b.points.reduce((sum, point) => sum + point.value, 0)
+    return totalB - totalA || a.label.localeCompare(b.label, 'fr')
+  })
+  return series
 }
 
 function zero(totals: Totals): boolean {

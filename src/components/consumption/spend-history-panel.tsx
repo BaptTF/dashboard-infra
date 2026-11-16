@@ -7,7 +7,9 @@ import { StatusBanner } from '~/components/status-banner'
 import { Button } from '~/components/ui/button'
 import { formatParisDateTime, formatUtcDate, formatUtcDayTime } from '~/lib/dates'
 import { formatCurrency } from '~/lib/format'
+import { groupSpendCurveByProvider } from '~/lib/spend'
 import type { SpendGranularity, SpendHistory } from '~/lib/types'
+import type { SpendGrouping } from '~/lib/spend-view'
 
 function granularityLabel(granularity: SpendGranularity): string {
   return granularity === 'hour'
@@ -30,30 +32,40 @@ export function SpendHistoryPanel({
   windowLabel,
   onlyKeys,
   filterLabel,
+  grouping,
 }: {
   query: UseQueryResult<SpendHistory>
   windowLabel: string
   onlyKeys?: string[]
   filterLabel?: string
+  grouping: SpendGrouping
 }) {
   const data = query.data
-  const series = data
+  const byProvider = grouping === 'provider'
+  const keySeries = data
     ? onlyKeys
       ? data.series.filter((entry) => onlyKeys.includes(entry.virtualKey))
       : data.series
     : []
-  const chartSeries = series.map((entry) => ({
-    name: entry.virtualKey,
+  const lines = byProvider
+    ? groupSpendCurveByProvider(data?.providerSlices ?? [], onlyKeys).map((entry) => ({
+        name: entry.label,
+        points: entry.points,
+      }))
+    : keySeries.map((entry) => ({ name: entry.virtualKey, points: entry.points }))
+  const noun = byProvider ? 'fournisseur' : 'clé'
+  const chartSeries = lines.map((entry) => ({
+    name: entry.name,
     points: entry.points.map((point) => ({ x: point.timestamp * 1000, y: point.value })),
   }))
   const fine =
     data?.granularity === 'hour' || data?.granularity === '6h' || data?.granularity === '12h'
-  const tableRows = series
-    .flatMap((entry) => entry.points.map((point) => ({ virtualKey: entry.virtualKey, point })))
+  const tableRows = lines
+    .flatMap((entry) => entry.points.map((point) => ({ name: entry.name, point })))
     .sort((a, b) => b.point.timestamp - a.point.timestamp)
-    .map(({ virtualKey, point }) => [
+    .map(({ name, point }) => [
       <span
-        key={`${virtualKey}-${point.timestamp}`}
+        key={`${name}-${point.timestamp}`}
         className="whitespace-nowrap"
         title={
           fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)
@@ -61,20 +73,20 @@ export function SpendHistoryPanel({
       >
         {fine ? formatUtcDayTime(point.timestamp * 1000) : formatUtcDate(point.timestamp * 1000)}
       </span>,
-      virtualKey,
+      name,
       formatCurrency(point.value),
     ])
-  const pointCount = series.reduce((total, entry) => total + entry.points.length, 0)
-  const curveTotal = series.reduce(
+  const pointCount = lines.reduce((total, entry) => total + entry.points.length, 0)
+  const curveTotal = lines.reduce(
     (total, entry) => total + entry.points.reduce((sum, point) => sum + point.value, 0),
     0,
   )
-  const firstSampleAt = series.reduce((first, entry) => {
+  const firstSampleAt = lines.reduce((first, entry) => {
     const point = entry.points[0]
     return point && point.timestamp < first ? point.timestamp : first
   }, Number.POSITIVE_INFINITY)
   const firstSample = Number.isFinite(firstSampleAt) ? firstSampleAt * 1000 : null
-  const lastSampleAt = series.reduce((last, entry) => {
+  const lastSampleAt = lines.reduce((last, entry) => {
     const point = entry.points[entry.points.length - 1]
     return point && point.timestamp > last ? point.timestamp : last
   }, Number.NEGATIVE_INFINITY)
@@ -82,21 +94,21 @@ export function SpendHistoryPanel({
   const table: ChartTable = {
     columns: [
       { label: fine ? 'Date/heure UTC' : 'Jour UTC' },
-      { label: 'Clé' },
+      { label: byProvider ? 'Fournisseur' : 'Clé' },
       { label: 'Coût', align: 'right' },
     ],
     rows: tableRows,
     // The table contains every point; the footer repeats the exact raw sum so
     // rounded rows cannot hide a missing bucket.
     footer:
-      series.length > 0
+      lines.length > 0
         ? [
             'Total',
-            `${series.length} clé${series.length > 1 ? 's' : ''}`,
+            `${lines.length} ${noun}${lines.length > 1 ? 's' : ''}`,
             formatCurrency(curveTotal),
           ]
         : undefined,
-    note: series.length > 0 ? 'Total exact ; les lignes sont arrondies au centime.' : undefined,
+    note: lines.length > 0 ? 'Total exact ; les lignes sont arrondies au centime.' : undefined,
   }
   const unitLabel = data ? granularityLabel(data.granularity) : 'jour UTC'
   const detailLabel = data ? granularityDetail(data.granularity) : 'jour UTC'
@@ -111,12 +123,16 @@ export function SpendHistoryPanel({
           Courbe de coût Bifrost (UTC)
         </span>
       }
-      description={`Courbe toujours par clé Bifrost : le regroupement des tableaux ne la change pas. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; cliquez une clé dans la légende pour la masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`}
+      description={
+        byProvider
+          ? `Courbe par fournisseur Bifrost : les clés d'un même fournisseur sont additionnées. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque fournisseur est tracé à sa valeur propre, sans empilement ; cliquez un fournisseur dans la légende pour le masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
+          : `Courbe par clé Bifrost. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; cliquez une clé dans la légende pour la masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
+      }
       actions={
-        series.length > 0 ? (
+        lines.length > 0 ? (
           <span className="text-muted-foreground text-[11px]">
-            Total courbe : {formatCurrency(curveTotal)} · {series.length} clé
-            {series.length > 1 ? 's' : ''}
+            Total courbe : {formatCurrency(curveTotal)} · {lines.length} {noun}
+            {lines.length > 1 ? 's' : ''}
           </span>
         ) : null
       }
@@ -152,7 +168,7 @@ export function SpendHistoryPanel({
           description="Renseignez PROMETHEUS_URL côté serveur pour activer la courbe."
           icon={LineChart}
         />
-      ) : data && series.length === 0 ? (
+      ) : data && lines.length === 0 ? (
         <EmptyState
           title={onlyKeys?.length ? 'Aucune donnée pour cette clé' : 'Pas encore d’historique'}
           description={
@@ -167,13 +183,13 @@ export function SpendHistoryPanel({
           <Chart
             series={chartSeries}
             unit="currency"
-            ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel} pour ${windowLabel}`}
-            description={`Courbe des coûts Bifrost par ${unitLabel}, par clé, sans empilement : chaque série est à sa valeur propre. ${detailLabel}. Totaux identiques à la somme des points.`}
+            ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel}, par ${noun}, pour ${windowLabel}`}
+            description={`Courbe des coûts Bifrost par ${unitLabel}, par ${noun}, sans empilement : chaque série est à sa valeur propre. ${detailLabel}. Totaux identiques à la somme des points.`}
             height={330}
             xLabelMode={fine ? 'utc-time' : 'utc-day'}
             table={table}
             stepSeconds={chartStepSeconds}
-            dataKey={`bifrost-${data.window}-${data.granularity}${onlyKeys?.length ? `-${onlyKeys.join('-')}` : ''}`}
+            dataKey={`bifrost-${data.window}-${data.granularity}${byProvider ? '-provider' : ''}${onlyKeys?.length ? `-${onlyKeys.join('-')}` : ''}`}
             listLegend
             emptyTitle="Aucun point dans cette période"
           />

@@ -189,6 +189,13 @@ export interface SpendPersonDailySeries {
   points: MetricPoint[]
 }
 
+/** One key's cost on one provider, same buckets as the key curve. */
+export interface SpendProviderSlice {
+  virtualKey: string
+  provider: string
+  points: MetricPoint[]
+}
+
 export interface SpendHistory {
   configured: boolean
   mockMode: boolean
@@ -198,6 +205,8 @@ export interface SpendHistory {
   granularity: SpendGranularity
   window: SpendWindow
   series: SpendPersonDailySeries[]
+  /** Per key and provider, so the curve can follow the grouping control. */
+  providerSlices: SpendProviderSlice[]
   firstSampleAt: string | null
   error?: string
 }
