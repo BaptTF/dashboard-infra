@@ -1,4 +1,4 @@
-import { LineChart } from 'echarts/charts'
+import { CustomChart, LineChart } from 'echarts/charts'
 import {
   AriaComponent,
   DataZoomComponent,
@@ -12,7 +12,7 @@ import { LegacyGridContainLabel } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 import { ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { fillGaps, hasIsolatedPoint, seriesHasValue } from '~/lib/chart-series'
+import { fillGaps, hasIsolatedPoint, seriesHasValue, stackBars } from '~/lib/chart-series'
 import {
   formatParisDateTime,
   formatParisDay,
@@ -26,6 +26,7 @@ import { EmptyState } from './empty-state'
 
 echarts.use([
   LineChart,
+  CustomChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
@@ -98,6 +99,38 @@ const monthYearFormatter = new Intl.DateTimeFormat('fr-FR', {
   year: '2-digit',
 })
 
+function renderStackedBar(
+  params: { coordSys: { x: number; y: number; width: number; height: number } },
+  api: {
+    value: (index: number) => unknown
+    coord: (value: number[]) => number[]
+    style: () => object
+  },
+) {
+  const value = Number(api.value(1))
+  if (!Number.isFinite(value) || value <= 0) return undefined
+  const start = Number(api.value(2))
+  const end = Number(api.value(3))
+  const base = Number(api.value(4))
+  const topLeft = api.coord([start, base + value])
+  const bottomRight = api.coord([end, base])
+  const x0 = Math.min(topLeft[0] ?? 0, bottomRight[0] ?? 0)
+  const y0 = Math.min(topLeft[1] ?? 0, bottomRight[1] ?? 0)
+  const width = Math.max(Math.abs((bottomRight[0] ?? 0) - (topLeft[0] ?? 0)), 1)
+  const height = Math.abs((bottomRight[1] ?? 0) - (topLeft[1] ?? 0))
+  const bounds = params.coordSys
+  const left = Math.max(x0, bounds.x)
+  const top = Math.max(y0, bounds.y)
+  const right = Math.min(x0 + width, bounds.x + bounds.width)
+  const bottom = Math.min(y0 + height, bounds.y + bounds.height)
+  if (right <= left || bottom <= top) return undefined
+  return {
+    type: 'rect' as const,
+    shape: { x: left, y: top, width: right - left, height: bottom - top },
+    style: api.style(),
+  }
+}
+
 export function Chart({
   series,
   unit,
@@ -116,6 +149,7 @@ export function Chart({
   emptyDescription,
   listLegend = false,
   sampling = 'lttb',
+  variant = 'line',
 }: {
   series: ChartSeries[]
   unit: 'percent' | 'currency' | 'tokens'
@@ -138,6 +172,8 @@ export function Chart({
   listLegend?: boolean
   /** ECharts sampling mode. minmax preserves short quota cycle peaks. */
   sampling?: 'lttb' | 'minmax'
+  /** Cost history is stacked bars. Quota levels stay lines. */
+  variant?: 'line' | 'bar'
 }) {
   const container = useRef<HTMLDivElement>(null)
   const chart = useRef<ReturnType<typeof echarts.init> | null>(null)
@@ -245,6 +281,7 @@ export function Chart({
         // Small mobile legends wrap on several lines; large histories use the
         // interactive DOM legend below instead of a clipped canvas legend.
         show: legendVisible,
+        data: series.map((entry) => entry.name),
         selected: Object.fromEntries(
           series.map((entry) => [entry.name, !hiddenSeries.includes(entry.name)]),
         ),
@@ -271,7 +308,7 @@ export function Chart({
         borderColor: colors.grid,
         borderWidth: 1,
         axisPointer: {
-          type: 'line',
+          type: variant === 'bar' ? 'shadow' : 'line',
           lineStyle: { color: colors.muted, width: 1, type: 'dashed' },
         },
         textStyle: { color: colors.text, fontSize: 11 },
@@ -312,7 +349,20 @@ export function Chart({
               : xLabelMode === 'utc-time'
                 ? formatUtcDayTime(axisValue)
                 : formatParisDateTime(axisValue)
-          return `<div><div style="color:${escapeHtml(colors.muted)};font-size:10px;margin-bottom:4px">${escapeHtml(date)}</div>${rows}</div>`
+          const total =
+            variant === 'bar'
+              ? params.reduce((sum, entry) => {
+                  if (typeof entry !== 'object' || entry === null || !('value' in entry)) return sum
+                  const value = (entry as { value?: unknown }).value
+                  const amount = Array.isArray(value) ? Number(value[1]) : Number.NaN
+                  return Number.isFinite(amount) ? sum + amount : sum
+                }, 0)
+              : 0
+          const totalRow =
+            variant === 'bar' && total > 0
+              ? `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;padding-top:4px;border-top:1px solid ${escapeHtml(colors.grid)}"><span>Total</span><strong style="font-variant-numeric:tabular-nums">${escapeHtml(formatValue(total, unit))}</strong></div>`
+              : ''
+          return `<div><div style="color:${escapeHtml(colors.muted)};font-size:10px;margin-bottom:4px">${escapeHtml(date)}</div>${rows}${totalRow}</div>`
         },
       },
       dataZoom: [
@@ -363,44 +413,68 @@ export function Chart({
         },
         splitLine: { lineStyle: { color: colors.grid, type: 'dashed' } },
       },
-      series: series.map((entry, index) => {
-        const color = entry.color ?? colors.palette[index % colors.palette.length]
-        const filled = fillGaps(entry.points, stepMs)
-        // A singleton or a point cut off by holes has no line segment: draw its
-        // symbol so real data never looks like an empty chart.
-        const isolated = hasIsolatedPoint(filled, stepMs)
-        return {
-          type: 'line',
-          name: entry.name,
-          data: filled.map((point) => [point.x, point.y]),
-          showSymbol: isolated,
-          symbol: 'circle',
-          symbolSize: 4,
-          smooth: false,
-          sampling,
-          connectNulls: false,
-          lineStyle: { width: 1.8, color },
-          itemStyle: { color },
-          areaStyle: area ? { opacity: stacked ? 0.16 : 0.08, color } : undefined,
-          stack: stacked ? 'total' : undefined,
-          emphasis: { focus: 'series' },
-          markLine:
-            index === 0 && thresholdLines && thresholdLines.length > 0
-              ? {
-                  silent: true,
-                  symbol: 'none',
-                  lineStyle: { color: colors.warning, type: 'dashed', width: 1 },
-                  label: {
-                    color: colors.muted,
-                    fontSize: 10,
-                    formatter: (params: { value: number }) => formatPercent(Number(params.value)),
-                    position: 'insideEndTop',
-                  },
-                  data: thresholdLines.map((value) => ({ yAxis: value })),
-                }
-              : undefined,
-        }
-      }),
+      series:
+        variant === 'bar'
+          ? stackBars(series, new Set(hiddenSeries), stepMs).map((entry, index) => {
+              const color = series[index]?.color ?? colors.palette[index % colors.palette.length]
+              return {
+                type: 'custom' as const,
+                name: entry.name,
+                color,
+                coordinateSystem: 'cartesian2d' as const,
+                encode: { x: 0, y: 1 },
+                itemStyle: { color },
+                data: hiddenSeries.includes(entry.name)
+                  ? []
+                  : entry.points.map((point) => [
+                      point.x,
+                      point.y,
+                      point.start,
+                      point.end,
+                      point.base,
+                    ]),
+                renderItem: renderStackedBar,
+              }
+            })
+          : series.map((entry, index) => {
+              const color = entry.color ?? colors.palette[index % colors.palette.length]
+              const filled = fillGaps(entry.points, stepMs)
+              // A singleton or a point cut off by holes has no line segment: draw its
+              // symbol so real data never looks like an empty chart.
+              const isolated = hasIsolatedPoint(filled, stepMs)
+              return {
+                type: 'line' as const,
+                name: entry.name,
+                data: filled.map((point) => [point.x, point.y]),
+                showSymbol: isolated,
+                symbol: 'circle',
+                symbolSize: 4,
+                smooth: false,
+                sampling,
+                connectNulls: false,
+                lineStyle: { width: 1.8, color },
+                itemStyle: { color },
+                areaStyle: area ? { opacity: stacked ? 0.16 : 0.08, color } : undefined,
+                stack: stacked ? 'total' : undefined,
+                emphasis: { focus: 'series' as const },
+                markLine:
+                  index === 0 && thresholdLines && thresholdLines.length > 0
+                    ? {
+                        silent: true,
+                        symbol: 'none',
+                        lineStyle: { color: colors.warning, type: 'dashed', width: 1 },
+                        label: {
+                          color: colors.muted,
+                          fontSize: 10,
+                          formatter: (params: { value: number }) =>
+                            formatPercent(Number(params.value)),
+                          position: 'insideEndTop' as const,
+                        },
+                        data: thresholdLines.map((value) => ({ yAxis: value })),
+                      }
+                    : undefined,
+              }
+            }),
     }
 
     instance.setOption(option, { notMerge: true })
@@ -469,6 +543,7 @@ export function Chart({
     stepMs,
     thresholdLines,
     unit,
+    variant,
     xLabelMode,
     yMax,
   ])
@@ -509,7 +584,8 @@ export function Chart({
         data-series-count={series.length}
         data-legend-mode={legendMode}
         data-x-label-mode={xLabelMode}
-        data-stacked={stacked ? 'true' : 'false'}
+        data-stacked={variant === 'bar' || stacked ? 'true' : 'false'}
+        data-chart={variant}
         data-hidden-series={hiddenKey}
       />
       {legendAsList ? (

@@ -1,5 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query'
-import { LineChart, RotateCcw } from 'lucide-react'
+import { ChartColumnStacked, RotateCcw } from 'lucide-react'
 import { Chart, type ChartTable } from '~/components/chart'
 import { EmptyState } from '~/components/empty-state'
 import { Panel } from '~/components/panel'
@@ -113,20 +113,20 @@ export function SpendHistoryPanel({
   const unitLabel = data ? granularityLabel(data.granularity) : 'jour UTC'
   const detailLabel = data ? granularityDetail(data.granularity) : 'jour UTC'
   const scope = filterLabel ?? (onlyKeys?.length ? onlyKeys.join(', ') : null)
-  const chartStepSeconds = data?.granularity === 'day' ? data.stepSeconds : undefined
+  const chartStepSeconds = data?.stepSeconds
 
   return (
     <Panel
       title={
         <span className="flex items-center gap-2">
-          <LineChart className="size-3.5" aria-hidden="true" />
+          <ChartColumnStacked className="size-3.5" aria-hidden="true" />
           Courbe de coût Bifrost (UTC)
         </span>
       }
       description={
         byProvider
-          ? `Courbe par fournisseur Bifrost : les clés d'un même fournisseur sont additionnées. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque fournisseur est tracé à sa valeur propre, sans empilement ; cliquez un fournisseur dans la légende pour le masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
-          : `Courbe par clé Bifrost. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. Chaque clé est tracée à sa valeur propre, sans empilement ; cliquez une clé dans la légende pour la masquer et recaler l’axe ; totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
+          ? `Barres empilées par fournisseur Bifrost : les clés d'un même fournisseur sont additionnées. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. La hauteur de la colonne est le coût du créneau, chaque couleur est la part du fournisseur. Masquer un fournisseur retire sa part et recale l’axe. Totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
+          : `Barres empilées par clé Bifrost. ${scope ? `Clé ${scope}. ` : ''}Coûts reconstruits depuis les compteurs Bifrost, backfill inclus. La hauteur de la colonne est le coût du créneau, chaque couleur est la part de la clé. Masquer une clé retire sa part et recale l’axe. Totaux identiques à la somme des points. ${detailLabel}. ${windowLabel}.`
       }
       actions={
         lines.length > 0 ? (
@@ -166,7 +166,7 @@ export function SpendHistoryPanel({
         <EmptyState
           title="Prometheus non configuré"
           description="Renseignez PROMETHEUS_URL côté serveur pour activer la courbe."
-          icon={LineChart}
+          icon={ChartColumnStacked}
         />
       ) : data && lines.length === 0 ? (
         <EmptyState
@@ -176,19 +176,20 @@ export function SpendHistoryPanel({
               ? `Aucun point Bifrost pour ${onlyKeys.join(', ')} sur cette période.`
               : 'Aucun compteur Bifrost exploitable sur cette période. La courbe ne complète jamais les jours manquants.'
           }
-          icon={LineChart}
+          icon={ChartColumnStacked}
         />
       ) : data ? (
         <div className="space-y-3">
           <Chart
             series={chartSeries}
             unit="currency"
-            ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel}, par ${noun}, pour ${windowLabel}`}
-            description={`Courbe des coûts Bifrost par ${unitLabel}, par ${noun}, sans empilement : chaque série est à sa valeur propre. ${detailLabel}. Totaux identiques à la somme des points.`}
+            ariaLabel={`Coût Bifrost ${scope ? `pour ${scope} ` : ''}par ${unitLabel}, barres empilées par ${noun}, pour ${windowLabel}`}
+            description={`Barres empilées des coûts Bifrost par ${unitLabel}, par ${noun}. La hauteur d'une colonne est le coût du créneau. ${detailLabel}. Totaux identiques à la somme des points.`}
             height={330}
             xLabelMode={fine ? 'utc-time' : 'utc-day'}
             table={table}
             stepSeconds={chartStepSeconds}
+            variant="bar"
             dataKey={`bifrost-${data.window}-${data.granularity}${byProvider ? '-provider' : ''}${onlyKeys?.length ? `-${onlyKeys.join('-')}` : ''}`}
             listLegend
             emptyTitle="Aucun point dans cette période"

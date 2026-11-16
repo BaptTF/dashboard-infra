@@ -132,7 +132,7 @@ test('the mobile series legend can hide a key and rescale the chart', async ({
   test.skip(!testInfo.project.name.includes('mobile'), 'DOM legend is the mobile control')
   await gotoHydrated(page, '/consommation?window=all&source=all')
   const chart = page.locator('[data-data-key^="bifrost-all-day"]')
-  await expect(chart).toHaveAttribute('data-stacked', 'false')
+  await expect(chart).toHaveAttribute('data-stacked', 'true')
   await expect(chart).toHaveAttribute('data-hidden-series', '')
 
   const hide = page.getByRole('button', { name: 'Masquer hermes-lea' })
@@ -206,7 +206,7 @@ test('groups the tables by provider and keeps the choice in the URL', async ({ p
       exact: true,
     }),
   ).toBeVisible()
-  await expect(page.getByText('Courbe par fournisseur Bifrost').first()).toBeVisible()
+  await expect(page.getByText('Barres empilées par fournisseur Bifrost').first()).toBeVisible()
   await expect(page.locator('[data-data-key^="bifrost-1m-hour-provider"]')).toBeVisible()
 
   await byKey.click()

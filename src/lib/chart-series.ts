@@ -47,3 +47,50 @@ export function hasIsolatedPoint(points: ChartPoint[], stepMs: number | undefine
 export function seriesHasValue(points: ChartPoint[]): boolean {
   return points.some((point) => point.y != null)
 }
+
+/** Backfill samples are labelled at 23:59 UTC of the consumed day. */
+export const BACKFILL_DAY_OFFSET_MS = 86_340_000
+export const DAY_MS = 86_400_000
+
+/**
+ * The bar covers the bucket that produced the point. A backfill point is a
+ * whole UTC day. A live point starts at its timestamp and lasts one sampling step.
+ */
+export function barSpan(x: number, stepMs: number | undefined): { start: number; end: number } {
+  const dayOffset = ((x % DAY_MS) + DAY_MS) % DAY_MS
+  if (dayOffset === BACKFILL_DAY_OFFSET_MS) {
+    const start = x - BACKFILL_DAY_OFFSET_MS
+    return { start, end: start + DAY_MS }
+  }
+  const width = stepMs != null && stepMs > 0 ? stepMs : DAY_MS
+  return { start: x, end: x + width }
+}
+
+export interface StackedBarPoint {
+  x: number
+  y: number
+  start: number
+  end: number
+  base: number
+}
+
+/** Stacks positive points that share a timestamp. Hidden series stay listed and add nothing. */
+export function stackBars(
+  series: { name: string; points: ChartPoint[] }[],
+  hidden: ReadonlySet<string>,
+  stepMs: number | undefined,
+): { name: string; points: StackedBarPoint[] }[] {
+  const baseline = new Map<number, number>()
+  return series.map((entry) => {
+    const visible = !hidden.has(entry.name)
+    const points: StackedBarPoint[] = []
+    for (const point of entry.points) {
+      if (point.y == null || !Number.isFinite(point.y) || point.y <= 0) continue
+      const span = barSpan(point.x, stepMs)
+      const base = visible ? (baseline.get(point.x) ?? 0) : 0
+      points.push({ x: point.x, y: point.y, start: span.start, end: span.end, base })
+      if (visible) baseline.set(point.x, base + point.y)
+    }
+    return { name: entry.name, points }
+  })
+}
