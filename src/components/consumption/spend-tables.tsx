@@ -163,7 +163,15 @@ function sessionFact(row: HermesViewRow): { label: string; value: string; title:
       label: 'Sessions fournisseur',
       value: formatDecimal(row.sessions),
       title:
-        "Sessions de cette personne pour ce fournisseur seulement. Ce n'est pas son total, et ces lignes ne s'ajoutent pas au pied.",
+        "Sessions de cette ligne pour ce fournisseur seulement. Ce n'est pas le total de la personne, et ces lignes ne s'ajoutent pas au pied.",
+    }
+  }
+  if (row.sessionsDisplay === 'model') {
+    return {
+      label: 'Sessions modèle',
+      value: formatDecimal(row.sessions),
+      title:
+        "Sessions de ce modèle. Ce n'est pas le total de la personne, et ces lignes ne s'ajoutent pas au pied.",
     }
   }
   return {
@@ -285,19 +293,18 @@ function hermesColumns(grouping: SpendGrouping): DataTableColumn<HermesViewRow>[
             </span>
           )
         }
-        if (row.sessionsDisplay === 'scoped') {
-          return (
-            <span className="tnum" title={fact.title}>
-              {fact.value}
-              <span className="text-muted-foreground ml-1 text-[11px] font-normal">
-                fournisseur
-              </span>
-            </span>
-          )
-        }
+        const suffix =
+          row.sessionsDisplay === 'scoped'
+            ? 'fournisseur'
+            : row.sessionsDisplay === 'model'
+              ? 'modèle'
+              : null
         return (
           <span className="tnum" title={fact.title}>
             {fact.value}
+            {suffix ? (
+              <span className="text-muted-foreground ml-1 text-[11px] font-normal">{suffix}</span>
+            ) : null}
           </span>
         )
       },
@@ -417,8 +424,8 @@ export function HermesTable({
       }
       description={
         grouping === 'provider'
-          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description} Le pied compte chaque session de personne une fois. Sous un fournisseur, « fournisseur » marque les sessions de cette personne pour ce fournisseur : ce n'est pas son total, et ces lignes ne s'ajoutent pas au pied. « détail » ouvre le décompte par modèle.`
-          : description
+          ? `Regroupé par fournisseur, du plus coûteux au moins coûteux. ${description} Le pied compte chaque session de personne une fois. « fournisseur » et « modèle » marquent le décompte de la ligne : ce n'est pas le total de la personne, et ces lignes ne s'ajoutent pas au pied. « détail » ouvre ce décompte.`
+          : `${description} Le pied est le total des personnes, chaque session une fois. « fournisseur » et « modèle » sont le décompte de cette ligne : ils ne s'ajoutent pas à ce total.`
       }
     >
       {rows.length === 0 ? (

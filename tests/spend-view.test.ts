@@ -174,7 +174,11 @@ describe('groupHermesByProvider', () => {
     expect(unattributed?.sessions).toBe(0)
     expect(unattributed?.children.map((row) => row.label)).toEqual(['Hors Telegram'])
     expect(unattributed?.children[0]?.children).toEqual([])
-    expect(unattributed?.children[0]?.sessions).toBe(0)
+    expect(opencode?.children[0]?.children[0]?.sessionsDisplay).toBe('model')
+    const byPerson = buildHermesRows([camille], other, 'Hors Telegram')
+    expect(byPerson[0]?.sessionsDisplay).toBeUndefined()
+    expect(byPerson[0]?.children[0]?.sessionsDisplay).toBe('scoped')
+    expect(byPerson[0]?.children[0]?.children[0]?.sessionsDisplay).toBe('model')
   })
 
   it('omits Sans fournisseur when the leftover is only the person session total', () => {

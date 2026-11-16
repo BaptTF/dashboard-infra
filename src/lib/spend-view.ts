@@ -175,10 +175,10 @@ export interface HermesViewRow {
   shareOfCost?: number
   /**
    * `detail` hides a rolled-up count: model sessions stay on the children.
-   * `scoped` is a person under one provider: the count is for that provider,
-   * not the person's once-per-person total, and it does not add into the footer.
+   * `scoped` is the count for one provider, `model` for one model. Neither is
+   * the person's once-per-person total, and neither adds into the footer.
    */
-  sessionsDisplay?: 'amount' | 'detail' | 'scoped'
+  sessionsDisplay?: 'amount' | 'detail' | 'scoped' | 'model'
   children: HermesViewRow[]
 }
 
@@ -217,6 +217,7 @@ function leoProvider(parentId: string, source: string, provider: LeoProvider): H
     provider: provider.provider,
     model: '',
     ...totals(provider),
+    sessionsDisplay: 'scoped',
     children: provider.models.map((model) => leoModel(id, source, provider.provider, model)),
   }
 }
@@ -235,6 +236,7 @@ function leoModel(
     provider,
     model: model.model,
     ...totals(model),
+    sessionsDisplay: 'model',
     children: [],
   }
 }
