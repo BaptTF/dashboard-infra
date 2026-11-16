@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   barDomain,
   barSpan,
+  barUnderPointer,
   fillGaps,
   hasIsolatedPoint,
   seriesHasValue,
@@ -129,5 +130,31 @@ describe('stacked cost bars', () => {
       xMax: Date.UTC(2026, 10, 2),
       yMax: 10,
     })
+  })
+
+  it('keeps the day column under the pointer unless the cursor is inside the hour', () => {
+    const day = Date.UTC(2026, 10, 9, 23, 59)
+    const hourPoint = Date.UTC(2026, 10, 9, 22)
+    const stacked = stackBars(
+      [
+        { name: 'github-copilot', points: [{ x: day, y: 100 }] },
+        {
+          name: 'opencode-go',
+          points: [
+            { x: day, y: 2 },
+            { x: hourPoint, y: 1 },
+          ],
+        },
+      ],
+      new Set(),
+      hour,
+    )
+    const atHour = hourPoint + hour / 2
+    expect(barUnderPointer(stacked, new Set(), atHour, 50)?.x).toBe(day)
+    expect(barUnderPointer(stacked, new Set(), atHour, 50)?.parts.map((part) => part.name)).toEqual(
+      ['github-copilot', 'opencode-go'],
+    )
+    expect(barUnderPointer(stacked, new Set(), atHour, 0.5)?.x).toBe(hourPoint)
+    expect(barUnderPointer(stacked, new Set(), atHour, 200)?.x).toBe(day)
   })
 })

@@ -14,6 +14,7 @@ import { ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   barDomain,
+  barUnderPointer,
   fillGaps,
   hasIsolatedPoint,
   seriesHasValue,
@@ -263,6 +264,15 @@ export function Chart({
     const hidden = new Set(hiddenSeries)
     const stackedBars = variant === 'bar' ? stackBars(series, hidden, stepMs) : null
     const domain = stackedBars ? barDomain(stackedBars, hidden) : null
+    const pointer = { x: Number.NaN, y: Number.NaN }
+    const onPointer = (event: { offsetX?: number; offsetY?: number }) => {
+      if (typeof event.offsetX === 'number' && typeof event.offsetY === 'number') {
+        pointer.x = event.offsetX
+        pointer.y = event.offsetY
+      }
+    }
+    // Registered before the tooltip handler so the formatter sees this move.
+    instance.getZr().on('mousemove', onPointer)
 
     const option = {
       animation: !reducedMotion,
@@ -309,6 +319,7 @@ export function Chart({
       },
       tooltip: {
         trigger: 'axis',
+        transitionDuration: variant === 'bar' ? 0 : undefined,
         confine: true,
         className: 'chart-tooltip',
         extraCssText:
@@ -317,7 +328,10 @@ export function Chart({
         borderColor: colors.grid,
         borderWidth: 1,
         axisPointer: {
-          type: variant === 'bar' ? 'shadow' : 'line',
+          // A snapping shadow jumps between the hour and the day bar and
+          // flashes the canvas. A line that follows the pointer stays put.
+          type: 'line',
+          snap: variant === 'bar' ? false : undefined,
           lineStyle: { color: colors.muted, width: 1, type: 'dashed' },
         },
         textStyle: { color: colors.text, fontSize: 11 },
@@ -358,6 +372,42 @@ export function Chart({
               : xLabelMode === 'utc-time'
                 ? formatUtcDayTime(axisValue)
                 : formatParisDateTime(axisValue)
+          const pointed =
+            variant === 'bar' && stackedBars && Number.isFinite(pointer.x)
+              ? instance.convertFromPixel({ gridIndex: 0 }, [pointer.x, pointer.y])
+              : null
+          const pointedTime = Array.isArray(pointed) ? Number(pointed[0]) : Number.NaN
+          const pointedValue = Array.isArray(pointed) ? Number(pointed[1]) : Number.NaN
+          const hit =
+            stackedBars && Number.isFinite(pointedTime) && Number.isFinite(pointedValue)
+              ? barUnderPointer(stackedBars, hidden, pointedTime, pointedValue)
+              : null
+          if (hit) {
+            const date =
+              xLabelMode === 'utc-day'
+                ? formatUtcDate(hit.x)
+                : xLabelMode === 'utc-time'
+                  ? formatUtcDayTime(hit.x)
+                  : formatParisDateTime(hit.x)
+            const colorOf = new Map(
+              series.map((entry, index) => [
+                entry.name,
+                entry.color ?? colors.palette[index % colors.palette.length] ?? colors.palette[0],
+              ]),
+            )
+            const hitRows = hit.parts
+              .map((part) => {
+                const color = colorOf.get(part.name) ?? fallbackPalette[0] ?? '#0f766e'
+                return `<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;margin-top:3px"><span style="display:inline-flex;align-items:center;gap:6px;min-width:0"><span style="width:7px;height:7px;border-radius:2px;background:${escapeHtml(color)};flex:none"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">${escapeHtml(part.name)}</span></span><strong style="font-variant-numeric:tabular-nums">${escapeHtml(formatValue(part.y, unit))}</strong></div>`
+              })
+              .join('')
+            const hitTotal = hit.parts.reduce((sum, part) => sum + part.y, 0)
+            const hitTotalRow =
+              hitTotal > 0
+                ? `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:6px;padding-top:4px;border-top:1px solid ${escapeHtml(colors.grid)}"><span>Total</span><strong style="font-variant-numeric:tabular-nums">${escapeHtml(formatValue(hitTotal, unit))}</strong></div>`
+                : ''
+            return `<div><div style="color:${escapeHtml(colors.muted)};font-size:10px;margin-bottom:4px">${escapeHtml(date)}</div>${hitRows}${hitTotalRow}</div>`
+          }
           const total =
             variant === 'bar'
               ? params.reduce((sum, entry) => {
@@ -436,6 +486,10 @@ export function Chart({
                 coordinateSystem: 'cartesian2d' as const,
                 encode: { x: 0, y: 1 },
                 itemStyle: { color },
+                // Highlighting moves custom bars onto a hover layer, which
+                // drops the other colours for a frame and makes the column flicker.
+                emphasis: { disabled: true },
+                legendHoverLink: false,
                 data: hiddenSeries.includes(entry.name)
                   ? []
                   : entry.points.map((point) => [
@@ -537,6 +591,7 @@ export function Chart({
       window.removeEventListener('resize', onResize)
       instance.off('datazoom', onZoom)
       instance.off('legendselectchanged', onLegendChange)
+      instance.getZr().off('mousemove', onPointer)
     }
   }, [
     ariaLabel,

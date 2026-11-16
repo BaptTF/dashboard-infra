@@ -120,3 +120,61 @@ export function barDomain(
   if (!found || !(xMax > xMin)) return null
   return { xMin, xMax, yMax }
 }
+
+export interface BarHit {
+  x: number
+  parts: { name: string; y: number }[]
+}
+
+/**
+ * The stack the pointer is on. A live hour can sit inside a backfill day:
+ * the short rect wins only where the pointer is inside it, otherwise the
+ * taller column wins. Nearest-sample snapping showed the hour for the whole day.
+ */
+export function barUnderPointer(
+  series: { name: string; points: StackedBarPoint[] }[],
+  hidden: ReadonlySet<string>,
+  time: number,
+  value: number,
+): BarHit | null {
+  const groups = new Map<
+    number,
+    {
+      start: number
+      end: number
+      height: number
+      parts: { name: string; y: number; base: number }[]
+    }
+  >()
+  for (const entry of series) {
+    if (hidden.has(entry.name)) continue
+    for (const point of entry.points) {
+      if (time < point.start || time >= point.end) continue
+      const group = groups.get(point.x) ?? {
+        start: point.start,
+        end: point.end,
+        height: 0,
+        parts: [],
+      }
+      group.parts.push({ name: entry.name, y: point.y, base: point.base })
+      group.height = Math.max(group.height, point.base + point.y)
+      groups.set(point.x, group)
+    }
+  }
+  if (groups.size === 0) return null
+  const ranked = [...groups.entries()].sort((left, right) => {
+    const leftSpan = left[1].end - left[1].start
+    const rightSpan = right[1].end - right[1].start
+    return leftSpan - rightSpan || right[1].height - left[1].height
+  })
+  const inside = ranked.find(([, group]) =>
+    group.parts.some((part) => value >= part.base && value < part.base + part.y),
+  )
+  const chosen =
+    inside ??
+    ranked.reduce((tallest, group) => (group[1].height > tallest[1].height ? group : tallest))
+  return {
+    x: chosen[0],
+    parts: chosen[1].parts.map((part) => ({ name: part.name, y: part.y })),
+  }
+}
