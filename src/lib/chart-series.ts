@@ -94,3 +94,29 @@ export function stackBars(
     return { name: entry.name, points }
   })
 }
+
+/**
+ * Axis domain that contains every visible bar. The sample timestamp sits at
+ * one edge of its bucket, so scaling to the samples alone clips the first and
+ * last columns. The Y max is the stacked column, not the tallest single part.
+ */
+export function barDomain(
+  series: { name: string; points: StackedBarPoint[] }[],
+  hidden: ReadonlySet<string>,
+): { xMin: number; xMax: number; yMax: number } | null {
+  let xMin = Infinity
+  let xMax = -Infinity
+  let yMax = 0
+  let found = false
+  for (const entry of series) {
+    if (hidden.has(entry.name)) continue
+    for (const point of entry.points) {
+      found = true
+      xMin = Math.min(xMin, point.start)
+      xMax = Math.max(xMax, point.end)
+      yMax = Math.max(yMax, point.base + point.y)
+    }
+  }
+  if (!found || !(xMax > xMin)) return null
+  return { xMin, xMax, yMax }
+}

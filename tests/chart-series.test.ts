@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { barSpan, fillGaps, hasIsolatedPoint, seriesHasValue, stackBars } from '~/lib/chart-series'
+import {
+  barDomain,
+  barSpan,
+  fillGaps,
+  hasIsolatedPoint,
+  seriesHasValue,
+  stackBars,
+} from '~/lib/chart-series'
 
 describe('chart series holes and isolated points', () => {
   it('inserts nulls for missing scrape steps without bridging the gap', () => {
@@ -93,5 +100,34 @@ describe('stacked cost bars', () => {
       hour,
     )
     expect(shown[1]?.points[0]).toMatchObject({ y: 2, base: 5 })
+  })
+
+  it('extends the axis to the bar edges and the stacked column', () => {
+    const backfill = Date.UTC(2026, 10, 1, 23, 59)
+    const live = Date.UTC(2026, 10, 16, 14)
+    const stacked = stackBars(
+      [
+        { name: 'hermes-lea', points: [{ x: backfill, y: 10 }] },
+        {
+          name: 'hermes-leo',
+          points: [
+            { x: backfill, y: 2 },
+            { x: live, y: 4 },
+          ],
+        },
+      ],
+      new Set(),
+      hour,
+    )
+    expect(barDomain(stacked, new Set())).toEqual({
+      xMin: Date.UTC(2026, 10, 1),
+      xMax: Date.UTC(2026, 10, 16, 15),
+      yMax: 12,
+    })
+    expect(barDomain(stacked, new Set(['hermes-leo']))).toEqual({
+      xMin: Date.UTC(2026, 10, 1),
+      xMax: Date.UTC(2026, 10, 2),
+      yMax: 10,
+    })
   })
 })

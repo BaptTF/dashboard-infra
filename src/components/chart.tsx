@@ -12,7 +12,13 @@ import { LegacyGridContainLabel } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 import { ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { fillGaps, hasIsolatedPoint, seriesHasValue, stackBars } from '~/lib/chart-series'
+import {
+  barDomain,
+  fillGaps,
+  hasIsolatedPoint,
+  seriesHasValue,
+  stackBars,
+} from '~/lib/chart-series'
 import {
   formatParisDateTime,
   formatParisDay,
@@ -254,6 +260,9 @@ export function Chart({
       chart.current ?? echarts.init(container.current, undefined, { renderer: 'canvas' })
     chart.current = instance
     const restore = zoomState.current?.key === dataKey ? zoomState.current : null
+    const hidden = new Set(hiddenSeries)
+    const stackedBars = variant === 'bar' ? stackBars(series, hidden, stepMs) : null
+    const domain = stackedBars ? barDomain(stackedBars, hidden) : null
 
     const option = {
       animation: !reducedMotion,
@@ -382,6 +391,9 @@ export function Chart({
       xAxis: {
         type: 'time',
         boundaryGap: false,
+        // Bars are wider than their sample: a backfill day starts at 00:00
+        // while the point is 23:59, and a live bar ends one step later.
+        ...(domain ? { min: domain.xMin, max: domain.xMax } : {}),
         axisLine: { lineStyle: { color: colors.grid } },
         axisTick: { show: false },
         axisLabel: {
@@ -403,7 +415,7 @@ export function Chart({
       yAxis: {
         type: 'value',
         min: 0,
-        max: yMax,
+        max: domain ? domain.yMax * 1.05 : yMax,
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
@@ -414,8 +426,8 @@ export function Chart({
         splitLine: { lineStyle: { color: colors.grid, type: 'dashed' } },
       },
       series:
-        variant === 'bar'
-          ? stackBars(series, new Set(hiddenSeries), stepMs).map((entry, index) => {
+        variant === 'bar' && stackedBars
+          ? stackedBars.map((entry, index) => {
               const color = series[index]?.color ?? colors.palette[index % colors.palette.length]
               return {
                 type: 'custom' as const,
