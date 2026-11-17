@@ -18,9 +18,10 @@ function message(error: unknown): string {
 }
 
 /**
- * Fetches one raw cumulative counter twice: a wide daily reference seeds one
- * baseline per series before the period, then the period itself runs at the
- * adaptive granularity. Cost and token totals share this merge.
+ * Fetches one raw cumulative counter three times: a wide daily reference seeds
+ * one baseline per series before the period, the period itself runs at the
+ * adaptive granularity, and an instant query adds the current partial bucket.
+ * Cost and token totals share this merge.
  */
 export async function fetchBifrostCounterRows(
   client: PrometheusClient,
@@ -28,7 +29,7 @@ export async function fetchBifrostCounterRows(
   metric: string,
 ): Promise<MetricSeries[]> {
   const query = buildSpendCounterQuery(metric)
-  const [baseline, period] = await Promise.all([
+  const [baseline, period, live] = await Promise.all([
     client.queryRange(
       query,
       Math.floor(plan.baselineFrom.getTime() / 1000),
@@ -41,6 +42,7 @@ export async function fetchBifrostCounterRows(
       Math.floor(plan.to.getTime() / 1000),
       plan.queryStepSeconds,
     ),
+    client.query(query),
   ])
 
   const merged = new Map<string, MetricSeries>()
@@ -67,6 +69,15 @@ export async function fetchBifrostCounterRows(
     if (last) add(row, [last])
   }
   for (const row of period) add(row, row.points)
+
+  // The period range is evaluated on bucket boundaries, so a series that first
+  // appears mid-bucket (a new provider, a gateway restart) stays invisible
+  // until the next boundary. Add the current instant value so live counters
+  // show up immediately.
+  const nowSeconds = Math.floor(plan.to.getTime() / 1000)
+  for (const sample of live) {
+    add({ labels: sample.labels, points: [] }, [{ timestamp: nowSeconds, value: sample.value }])
+  }
 
   return [...merged.values()].map((row) => {
     const byTimestamp = new Map<number, number>()
