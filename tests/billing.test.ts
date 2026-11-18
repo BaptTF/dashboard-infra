@@ -184,7 +184,45 @@ describe('billing series', () => {
       ),
     ])
     const oneTime = oneTimeCharges(charges, monthly)
+    const withHetzner = [
+      ...charges,
+      ...assembleCharges([
+        sample(
+          {
+            provider: 'hetzner',
+            account: 'cloud',
+            item: 'server',
+            resource: 'server',
+            currency: 'EUR',
+            quality: 'declared',
+            period_start: '2026-07-01',
+            period_end: '2026-07-31',
+          },
+          16.49,
+        ),
+      ]),
+    ]
+    const withCatalog = [
+      ...monthly,
+      ...assembleMonthly([
+        sample(
+          {
+            provider: 'hetzner',
+            account: 'cloud',
+            item: 'cx43',
+            resource: 'cx43',
+            currency: 'EUR',
+            quality: 'estimate',
+          },
+          15.99,
+        ),
+      ]),
+    ]
     expect(oneTime.map((charge) => charge.provider).sort()).toEqual(['cloudflare', 'vercel'])
+    expect(oneTimeCharges(withHetzner, withCatalog).map((charge) => charge.provider).sort()).toEqual([
+      'cloudflare',
+      'vercel',
+    ])
     expect(totalsByCurrency(oneTime)).toEqual([
       { currency: 'EUR', amount: 4.2 },
       { currency: 'USD', amount: 12.71 },

@@ -328,18 +328,16 @@ export interface MoneyTotal {
 }
 
 /**
- * Charges with no current monthly price for the same provider, account and
- * item. A top-up or a one-off invoice lands here. A subscription that also
- * publishes a monthly price does not.
+ * Charges for an account that has no current monthly price. A top-up lands
+ * here. A Hetzner invoice does not: the account already has a catalog price,
+ * even when the invoice line and the catalog line are not the same item.
  */
 export function oneTimeCharges(
   charges: BillingCharge[],
   monthly: BillingMonthly[],
 ): BillingCharge[] {
-  const recurring = new Set(monthly.map((row) => `${row.provider}\0${row.account}\0${row.item}`))
-  return charges.filter(
-    (charge) => !recurring.has(`${charge.provider}\0${charge.account}\0${charge.item}`),
-  )
+  const recurring = new Set(monthly.map((row) => `${row.provider}\0${row.account}`))
+  return charges.filter((charge) => !recurring.has(`${charge.provider}\0${charge.account}`))
 }
 
 export function totalsByCurrency(rows: { currency: string; amount: number }[]): MoneyTotal[] {
