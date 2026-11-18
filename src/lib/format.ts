@@ -35,6 +35,22 @@ const percentInteger = new Intl.NumberFormat('fr-FR', {
   maximumFractionDigits: 0,
 })
 
+export function formatMoney(value: number | null | undefined, currencyCode: string): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const code = /^[A-Z]{3}$/.test(currencyCode) ? currencyCode : 'EUR'
+  try {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return `${value.toFixed(2)} ${code}`
+  }
+}
+
 export function formatCurrency(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '—'
   const formatted = currency.format(value)
@@ -107,6 +123,8 @@ const QUOTA_LABELS: Record<string, string> = {
   'on-demand': 'Hors forfait',
   'hors forfait': 'Hors forfait',
   grok: 'Grok',
+  credits: 'Solde AI Gateway',
+  token_pass: 'Token Pass',
 }
 
 /** Exporter quota kinds are raw snake_case labels; the UI always speaks French. */

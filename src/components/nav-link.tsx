@@ -7,6 +7,7 @@ import { cn } from '~/lib/utils'
 const defaults = {
   '/': { window: 'monthly', history: '1m' },
   '/consommation': { window: '1m', source: 'all', group: 'key' },
+  '/facturation': { window: '1m' },
 } as const
 
 function normalizeSource(value: unknown): SpendSource {
@@ -18,7 +19,7 @@ export function NavLink({
   children,
   className,
 }: {
-  to: '/' | '/consommation'
+  to: '/' | '/consommation' | '/facturation'
   children: ReactNode
   className?: string
 }) {
@@ -56,6 +57,22 @@ export function NavLink({
         to="/"
         // Re-clicking the active tab must not erase its filters.
         search={active ? quotaSearch : defaults['/']}
+        aria-current={active ? 'page' : undefined}
+        className={linkClassName}
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  if (to === '/facturation') {
+    const billingSearch = {
+      window: normalizeSpendWindow(typeof search.window === 'string' ? search.window : undefined),
+    }
+    return (
+      <Link
+        to="/facturation"
+        search={active ? billingSearch : defaults['/facturation']}
         aria-current={active ? 'page' : undefined}
         className={linkClassName}
       >

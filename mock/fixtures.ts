@@ -997,6 +997,125 @@ const KNOWN_METRICS = [
   'bifrost_weight_sidecar_last_observation_timestamp_seconds',
 ]
 
+function parisMonth(now: Date, delta: number): { start: string; end: string } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now)
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const index = Number(map.year) * 12 + (Number(map.month) - 1) + delta
+  const year = Math.floor(index / 12)
+  const month = (index % 12) + 1
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const mm = String(month).padStart(2, '0')
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(last).padStart(2, '0')}`,
+  }
+}
+
+/** Fictional billing series. Amounts and labels are not a real ledger. */
+function billingSamples(now: Date, scenario: MockScenario, query: string): PromSample[] {
+  const current = parisMonth(now, 0)
+  const previous = parisMonth(now, -1)
+  const older = parisMonth(now, -2)
+  const charge = (
+    provider: string,
+    account: string,
+    item: string,
+    resource: string,
+    currency: string,
+    quality: string,
+    period: { start: string; end: string },
+    amount: number,
+  ): PromSample => ({
+    metric: {
+      provider,
+      account,
+      item,
+      resource,
+      currency,
+      quality,
+      period_start: period.start,
+      period_end: period.end,
+    },
+    value: amount,
+  })
+  if (query.includes('billing_charge_amount')) {
+    return [
+      charge('contabo', 'vps', 'vps', 'vps', 'EUR', 'declared', current, 8),
+      charge('contabo', 'vps', 'vps', 'vps', 'EUR', 'declared', previous, 7),
+      charge('contabo', 'vps', 'vps', 'vps', 'EUR', 'declared', older, 7),
+      charge('cloudflare', 'main', 'invoice', 'invoice-demo', 'EUR', 'invoice', current, 4.2),
+      charge('opencode', 'b', 'go', 'go', 'USD', 'declared', current, 10),
+    ]
+  }
+  if (query.includes('billing_monthly_amount')) {
+    return [
+      {
+        metric: {
+          provider: 'contabo',
+          account: 'vps',
+          item: 'vps',
+          resource: 'vps',
+          currency: 'EUR',
+          quality: 'declared',
+        },
+        value: 8,
+      },
+      {
+        metric: {
+          provider: 'hetzner',
+          account: 'cloud',
+          item: 'server',
+          resource: 'node',
+          currency: 'EUR',
+          quality: 'estimate',
+        },
+        value: 12.5,
+      },
+      {
+        metric: {
+          provider: 'opencode',
+          account: 'b',
+          item: 'go',
+          resource: 'go',
+          currency: 'USD',
+          quality: 'declared',
+        },
+        value: 10,
+      },
+    ]
+  }
+  if (query.includes('billing_fx_eur')) {
+    return [{ metric: { currency: 'USD' }, value: 0.92 }]
+  }
+  if (query.includes('billing_collection_success')) {
+    return [
+      { metric: { provider: 'declared', account: 'ledger' }, value: 1 },
+      { metric: { provider: 'cloudflare', account: 'main' }, value: 1 },
+      { metric: { provider: 'hetzner', account: 'cloud' }, value: 1 },
+    ]
+  }
+  if (query.includes('billing_collection_partial')) {
+    return [
+      { metric: { provider: 'declared', account: 'ledger' }, value: 0 },
+      { metric: { provider: 'cloudflare', account: 'main' }, value: 0 },
+      { metric: { provider: 'hetzner', account: 'cloud' }, value: scenario === 'partial' ? 1 : 0 },
+    ]
+  }
+  if (query.includes('billing_collection_last_success_timestamp_seconds')) {
+    const at = now.getTime() / 1000 - 60
+    return [
+      { metric: { provider: 'declared', account: 'ledger' }, value: at },
+      { metric: { provider: 'cloudflare', account: 'main' }, value: at },
+      { metric: { provider: 'hetzner', account: 'cloud' }, value: at },
+    ]
+  }
+  return []
+}
+
 function handleInstant(model: MockModel, query: string): MockResponse {
   const vector = (rows: PromSample[]) => instant(rows, model.now.getTime())
   if (model.scenario === 'partial' && query.includes('ai_usage_spend_usd')) {
@@ -1004,6 +1123,10 @@ function handleInstant(model: MockModel, query: string): MockResponse {
   }
   const emptyResult = empty(model.scenario)
   if (emptyResult) return emptyResult
+
+  if (query.includes('billing_')) {
+    return { status: 200, body: vector(billingSamples(model.now, model.scenario, query)) }
+  }
 
   if (query.includes('hermes_window_')) {
     const agent = query.includes('agent="lea"') ? 'lea' : 'leo'

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConsommationRouteImport } from './routes/consommation'
+import { Route as FacturationRouteImport } from './routes/facturation'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as ReadyzRouteImport } from './routes/readyz'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const ConsommationRoute = ConsommationRouteImport.update({
   id: '/consommation',
   path: '/consommation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FacturationRoute = FacturationRouteImport.update({
+  id: '/facturation',
+  path: '/facturation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HealthzRoute = HealthzRouteImport.update({
@@ -38,12 +44,14 @@ const ReadyzRoute = ReadyzRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/consommation': typeof ConsommationRoute
+  '/facturation': typeof FacturationRoute
   '/healthz': typeof HealthzRoute
   '/readyz': typeof ReadyzRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/consommation': typeof ConsommationRoute
+  '/facturation': typeof FacturationRoute
   '/healthz': typeof HealthzRoute
   '/readyz': typeof ReadyzRoute
 }
@@ -51,20 +59,23 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/consommation': typeof ConsommationRoute
+  '/facturation': typeof FacturationRoute
   '/healthz': typeof HealthzRoute
   '/readyz': typeof ReadyzRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/consommation' | '/healthz' | '/readyz'
+  fullPaths: '/' | '/consommation' | '/facturation' | '/healthz' | '/readyz'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/consommation' | '/healthz' | '/readyz'
-  id: '__root__' | '/' | '/consommation' | '/healthz' | '/readyz'
+  to: '/' | '/consommation' | '/facturation' | '/healthz' | '/readyz'
+  id:
+    '__root__' | '/' | '/consommation' | '/facturation' | '/healthz' | '/readyz'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConsommationRoute: typeof ConsommationRoute
+  FacturationRoute: typeof FacturationRoute
   HealthzRoute: typeof HealthzRoute
   ReadyzRoute: typeof ReadyzRoute
 }
@@ -83,6 +94,13 @@ declare module '@tanstack/react-router' {
       path: '/consommation'
       fullPath: '/consommation'
       preLoaderRoute: typeof ConsommationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/facturation': {
+      id: '/facturation'
+      path: '/facturation'
+      fullPath: '/facturation'
+      preLoaderRoute: typeof FacturationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/healthz': {
@@ -105,6 +123,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConsommationRoute: ConsommationRoute,
+  FacturationRoute: FacturationRoute,
   HealthzRoute: HealthzRoute,
   ReadyzRoute: ReadyzRoute,
 }

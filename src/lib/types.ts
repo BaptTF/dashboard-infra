@@ -61,6 +61,16 @@ export interface AcuCycle {
   resetAt: number | null
 }
 
+/** Remaining wallet. usedUsd is lifetime consumption when the exporter publishes it. */
+export interface CreditBalance {
+  provider: string
+  subscription: string
+  kind: string
+  balanceUsd: number | null
+  usedUsd: number | null
+  resetAt: number | null
+}
+
 export interface KeyWeight {
   provider: string
   subscription: string
@@ -95,6 +105,7 @@ export interface SubscriptionsOverview {
   spendBuckets: SpendBucket[]
   acu: AcuUsage[]
   acuCycles: AcuCycle[]
+  credits: CreditBalance[]
   weights: KeyWeight[]
   collection: CollectionStatus[]
   weightStatus: WeightStatus
@@ -209,6 +220,55 @@ export interface SpendHistory {
   providerSlices: SpendProviderSlice[]
   firstSampleAt: string | null
   error?: string
+}
+
+export type BillingQuality = 'declared' | 'invoice' | 'estimate'
+
+export interface BillingCharge {
+  provider: string
+  account: string
+  item: string
+  resource: string
+  currency: string
+  quality: BillingQuality
+  periodStart: string
+  periodEnd: string
+  amount: number
+}
+
+export interface BillingMonthly {
+  provider: string
+  account: string
+  item: string
+  resource: string
+  currency: string
+  quality: BillingQuality
+  amount: number
+}
+
+export interface BillingRate {
+  currency: string
+  eur: number
+}
+
+export interface BillingSource {
+  provider: string
+  account: string
+  success: boolean
+  partial: boolean
+  lastSuccessAt: number | null
+  stale: boolean
+}
+
+export interface BillingReport {
+  configured: boolean
+  mockMode: boolean
+  fetchedAt: string
+  error?: string
+  charges: BillingCharge[]
+  monthly: BillingMonthly[]
+  rates: BillingRate[]
+  sources: BillingSource[]
 }
 
 export interface HealthResponse {

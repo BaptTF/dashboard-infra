@@ -1,4 +1,5 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { getBillingReport } from '~/functions/billing.functions'
 import { getConsumptionHistory, getConsumptionReport } from '~/functions/consumption.functions'
 import { getQuotaHistory, getSubscriptionsOverview } from '~/functions/subscriptions.functions'
 import type { HistoryRange, QuotaWindow, SpendWindow } from './types'
@@ -26,6 +27,13 @@ export const consumptionReportQueryOptions = (window: SpendWindow) =>
     queryFn: () => getConsumptionReport({ data: { window } }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
+  })
+
+export const billingReportQueryOptions = () =>
+  queryOptions({
+    queryKey: ['billing', 'report'],
+    queryFn: () => getBillingReport(),
+    staleTime: 30_000,
   })
 
 export const consumptionHistoryQueryOptions = (window: SpendWindow) =>

@@ -31,7 +31,7 @@ export function AppHeader() {
           <span className="flex flex-col leading-none">
             <span className="text-sm font-semibold tracking-tight">Pilotage IA</span>
             <span className="text-muted-foreground mt-1 hidden text-[10px] tracking-wide uppercase sm:block">
-              Abonnements & consommation
+              Abonnements, consommation, factures
             </span>
           </span>
         </Link>
@@ -42,6 +42,7 @@ export function AppHeader() {
         >
           <NavLink to="/">Abonnements</NavLink>
           <NavLink to="/consommation">Consommation</NavLink>
+          <NavLink to="/facturation">Facturation</NavLink>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
