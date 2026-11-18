@@ -3,7 +3,9 @@ import {
   assembleCharges,
   assembleMonthly,
   assembleRates,
+  annualCharges,
   billingAccountLabel,
+  billingChargeItemLabel,
   billingProviderLabel,
   chargesByMonth,
   eurosEquivalent,
@@ -169,6 +171,19 @@ describe('billing series', () => {
         },
         4.2,
       ),
+      sample(
+        {
+          provider: 'cloudflare',
+          account: 'main',
+          item: 'invoice',
+          resource: 'invoice-previous',
+          currency: 'EUR',
+          quality: 'invoice',
+          period_start: '2025-11-01',
+          period_end: '2025-11-01',
+        },
+        4,
+      ),
     ])
     const monthly = assembleMonthly([
       sample(
@@ -218,15 +233,12 @@ describe('billing series', () => {
         ),
       ]),
     ]
-    expect(oneTime.map((charge) => charge.provider).sort()).toEqual(['cloudflare', 'vercel'])
-    expect(oneTimeCharges(withHetzner, withCatalog).map((charge) => charge.provider).sort()).toEqual([
-      'cloudflare',
+    expect(oneTime.map((charge) => charge.provider)).toEqual(['vercel'])
+    expect(oneTimeCharges(withHetzner, withCatalog).map((charge) => charge.provider)).toEqual([
       'vercel',
     ])
-    expect(totalsByCurrency(oneTime)).toEqual([
-      { currency: 'EUR', amount: 4.2 },
-      { currency: 'USD', amount: 12.71 },
-    ])
+    expect(annualCharges(charges).map((charge) => charge.amount)).toEqual([4.2])
+    expect(totalsByCurrency(oneTime)).toEqual([{ currency: 'USD', amount: 12.71 }])
     expect(totalsByCurrency(monthly)).toEqual([{ currency: 'USD', amount: 10 }])
   })
 
@@ -237,5 +249,7 @@ describe('billing series', () => {
     expect(billingAccountLabel('vercel', 'team')).toBe('Équipe')
     expect(billingProviderLabel('vercel')).toBe('Vercel')
     expect(billingAccountLabel('contabo', 'other')).toBe('other')
+    expect(billingChargeItemLabel('cloudflare', 'invoice')).toBe('DNS')
+    expect(billingChargeItemLabel('vercel', 'invoice')).toBe('Facture')
   })
 })

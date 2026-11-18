@@ -43,7 +43,7 @@ function BillingPage() {
     <DashboardPage
       eyebrow="Dépenses"
       title="Facturation"
-      description="Tarif mensuel, achats ponctuels, et total payé depuis le début. Les libellés sont des rôles, pas des identifiants."
+      description="Tarif mensuel, DNS annuel, achats ponctuels, et total payé depuis le début. Les libellés sont des rôles, pas des identifiants."
       actions={
         <>
           {report?.mockMode ? (
@@ -59,7 +59,7 @@ function BillingPage() {
       <QueryState
         query={reportQuery}
         ariaLabel="Chargement de la facturation"
-        skeleton={<PageSkeleton cards={3} />}
+        skeleton={<PageSkeleton cards={4} />}
         isEmpty={(data) => data.charges.length === 0 && data.monthly.length === 0}
         emptyTitle="Aucune facturation"
         emptyDescription="L'exporter n'a encore publié ni facture ni prix en cours."

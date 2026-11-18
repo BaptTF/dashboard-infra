@@ -94,6 +94,11 @@ export function billingQualityLabel(quality: BillingQuality): string {
   }
 }
 
+/** Cloudflare publishes invoices, and each one is the yearly DNS bill. */
+export function isAnnualProvider(provider: string): boolean {
+  return provider === 'cloudflare'
+}
+
 export function billingItemLabel(item: string): string {
   switch (item) {
     case 'vps':
@@ -117,6 +122,12 @@ export function billingItemLabel(item: string): string {
     default:
       return item
   }
+}
+
+/** Cloudflare's invoice line is the DNS renewal, not a generic invoice. */
+export function billingChargeItemLabel(provider: string, item: string): string {
+  if (isAnnualProvider(provider)) return 'DNS'
+  return billingItemLabel(item)
 }
 
 function field(sample: MetricSample, name: string): string {
@@ -328,16 +339,41 @@ export interface MoneyTotal {
 }
 
 /**
- * Charges for an account that has no current monthly price. A top-up lands
- * here. A Hetzner invoice does not: the account already has a catalog price,
- * even when the invoice line and the catalog line are not the same item.
+ * Latest invoice of a yearly service, one row per account and currency.
+ * Older renewals stay in the charge list. The amount is the price in force,
+ * not the sum of every year.
+ */
+export function annualCharges(charges: BillingCharge[]): BillingCharge[] {
+  const latest = new Map<string, BillingCharge>()
+  for (const charge of charges) {
+    if (!isAnnualProvider(charge.provider)) continue
+    const key = `${charge.provider}\0${charge.account}\0${charge.currency}`
+    const prev = latest.get(key)
+    if (!prev || charge.periodEnd > prev.periodEnd) latest.set(key, charge)
+  }
+  return [...latest.values()].sort(
+    (a, b) =>
+      a.provider.localeCompare(b.provider) ||
+      a.account.localeCompare(b.account) ||
+      a.currency.localeCompare(b.currency),
+  )
+}
+
+/**
+ * Charges for an account that has no current monthly price and is not a
+ * yearly bill. A top-up lands here. A Hetzner invoice does not: the account
+ * already has a catalog price, even when the invoice line and the catalog
+ * line are not the same item. Cloudflare DNS is yearly, so it stays out.
  */
 export function oneTimeCharges(
   charges: BillingCharge[],
   monthly: BillingMonthly[],
 ): BillingCharge[] {
   const recurring = new Set(monthly.map((row) => `${row.provider}\0${row.account}`))
-  return charges.filter((charge) => !recurring.has(`${charge.provider}\0${charge.account}`))
+  return charges.filter(
+    (charge) =>
+      !isAnnualProvider(charge.provider) && !recurring.has(`${charge.provider}\0${charge.account}`),
+  )
 }
 
 export function totalsByCurrency(rows: { currency: string; amount: number }[]): MoneyTotal[] {

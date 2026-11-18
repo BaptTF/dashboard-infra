@@ -19,11 +19,18 @@ test('facturation shows the monthly price, the lifetime total, and every invoice
   await expect(monthly).toContainText('20,50')
   await expect(monthly).toContainText('10,00')
 
+  const annual = page
+    .getByText('Par an', { exact: true })
+    .locator('xpath=ancestor::div[contains(@class,"rounded")]')
+    .first()
+  await expect(annual).toContainText('4,20')
+  await expect(annual).not.toContainText('20,50')
+
   const oneTime = page
     .getByText('Achats ponctuels', { exact: true })
     .locator('xpath=ancestor::div[contains(@class,"rounded")]')
     .first()
-  await expect(oneTime).toContainText('4,20')
+  await expect(oneTime).not.toContainText('4,20')
   await expect(oneTime).not.toContainText('10,00')
   await expect(oneTime).not.toContainText('12,50')
 
@@ -41,8 +48,13 @@ test('facturation shows the monthly price, the lifetime total, and every invoice
     'Estimation',
   )
 
+  const yearly = page.getByRole('table', { name: 'Prix annuel en cours' })
+  await expect(yearly).toContainText('Cloudflare')
+  await expect(yearly).toContainText('DNS')
+  await expect(yearly).not.toContainText('Contabo')
+
   const punctual = page.getByRole('table', { name: 'Liste des achats ponctuels' })
-  await expect(punctual).toContainText('Cloudflare')
+  await expect(punctual).not.toContainText('Cloudflare')
   await expect(punctual).not.toContainText('Contabo')
   await expect(punctual).not.toContainText('OpenCode')
   await expect(punctual).not.toContainText('Hetzner')
@@ -50,6 +62,7 @@ test('facturation shows the monthly price, the lifetime total, and every invoice
   const invoices = page.getByRole('table', { name: 'Toutes les factures' })
   await expect(invoices).toContainText('Contabo')
   await expect(invoices).toContainText('Cloudflare')
+  await expect(invoices).toContainText('DNS')
   await expect(invoices.getByText('7,00 €')).toHaveCount(2)
   await expect(invoices).not.toContainText('Hetzner')
 })

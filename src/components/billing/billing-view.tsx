@@ -1,6 +1,8 @@
-import { Receipt, ShoppingBag, Wallet } from 'lucide-react'
+import { CalendarClock, Receipt, ShoppingBag, Wallet } from 'lucide-react'
 import {
+  annualCharges,
   billingAccountLabel,
+  billingChargeItemLabel,
   billingItemLabel,
   billingProviderLabel,
   billingQualityLabel,
@@ -47,7 +49,7 @@ function euroHint(amount: number, currency: string, rates: BillingRate[]): strin
 }
 
 function lineLabel(provider: string, account: string, item: string): string {
-  return `${billingProviderLabel(provider)} ${billingAccountLabel(provider, account)} ${billingItemLabel(item)}`
+  return `${billingProviderLabel(provider)} ${billingAccountLabel(provider, account)} ${billingChargeItemLabel(provider, item)}`
 }
 
 export function BillingSummary({
@@ -58,7 +60,7 @@ export function BillingSummary({
   monthly: BillingMonthly[]
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         label="Par mois"
         icon={Wallet}
@@ -67,16 +69,22 @@ export function BillingSummary({
         hint="Tarif en cours. Hetzner est le catalogue, pas une facture déjà payée."
       />
       <MetricCard
+        label="Par an"
+        icon={CalendarClock}
+        value={<MoneyStack rows={annualCharges(charges)} />}
+        hint="DNS Cloudflare, une facture par an. Déjà compris dans Depuis toujours."
+      />
+      <MetricCard
         label="Achats ponctuels"
         icon={ShoppingBag}
         value={<MoneyStack rows={oneTimeCharges(charges, monthly)} />}
-        hint="Factures sans abonnement, comme un top-up. Déjà comprises dans Depuis toujours."
+        hint="Hors abonnement, comme un top-up. Déjà compris dans Depuis toujours."
       />
       <MetricCard
         label="Depuis toujours"
         icon={Receipt}
         value={<MoneyStack rows={charges} />}
-        hint="Abonnements et achats ponctuels. Le tarif en cours n'est pas ajouté."
+        hint="Tout ce qui a été payé. Le tarif en cours n'est pas ajouté."
       />
     </div>
   )
@@ -135,8 +143,8 @@ const chargeColumns = (rates: BillingRate[]): DataTableColumn<BillingCharge>[] =
     header: 'Poste',
     cell: (row) =>
       row.resource !== row.item
-        ? `${billingItemLabel(row.item)} · ${row.resource}`
-        : billingItemLabel(row.item),
+        ? `${billingChargeItemLabel(row.provider, row.item)} · ${row.resource}`
+        : billingChargeItemLabel(row.provider, row.item),
   },
   {
     key: 'period',
@@ -199,12 +207,39 @@ export function BillingTables({
   rates: BillingRate[]
 }) {
   const months = chargesByMonth(charges)
+  const annual = annualCharges(charges)
   const oneTime = oneTimeCharges(charges, monthly)
   return (
     <div className="space-y-5">
       <Panel
+        title="Prix annuel"
+        description="Dernière facture DNS. Les années d'avant restent dans Factures."
+      >
+        <DataTable
+          caption="Prix annuel en cours"
+          columns={chargeColumns(rates)}
+          rows={annual}
+          getRowId={(row) =>
+            [
+              row.provider,
+              row.account,
+              row.item,
+              row.resource,
+              row.currency,
+              row.quality,
+              row.periodStart,
+              row.periodEnd,
+            ].join(':')
+          }
+          getRowLabel={(row) =>
+            `${lineLabel(row.provider, row.account, row.item)} ${row.periodEnd}`
+          }
+          emptyLabel="Aucun prix annuel"
+        />
+      </Panel>
+      <Panel
         title="Achats ponctuels"
-        description="Factures qui ne correspondent à aucun tarif mensuel. Le top-up Vercel est ici."
+        description="Factures hors tarif mensuel et hors DNS annuel. Le top-up Vercel est ici."
       >
         <DataTable
           caption="Liste des achats ponctuels"
