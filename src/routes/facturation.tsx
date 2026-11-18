@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { FlaskConical } from 'lucide-react'
-import { BillingSummary, BillingTables } from '~/components/billing/billing-view'
+import { BillingTables } from '~/components/billing/billing-view'
 import { DashboardPage } from '~/components/dashboard-page'
 import { usePublishFreshness } from '~/components/freshness'
 import { PageSkeleton, QueryState } from '~/components/query-state'
@@ -43,7 +43,7 @@ function BillingPage() {
     <DashboardPage
       eyebrow="Dépenses"
       title="Facturation"
-      description="Tarif mensuel, DNS annuel, achats ponctuels, et total payé depuis le début. Les libellés sont des rôles, pas des identifiants."
+      description="Prix du mois, prix de l'année, achats ponctuels, puis toutes les factures. Les libellés sont des rôles, pas des identifiants."
       actions={
         <>
           {report?.mockMode ? (
@@ -86,7 +86,6 @@ function BillingPage() {
                   .join(', ')}. Une partie de la source n'a pas de prix.`}
               </StatusBanner>
             ) : null}
-            <BillingSummary charges={data.charges} monthly={data.monthly} />
             <BillingTables charges={data.charges} monthly={data.monthly} rates={data.rates} />
           </div>
         )}
