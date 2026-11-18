@@ -57,6 +57,8 @@ export function billingProviderLabel(provider: string): string {
       return 'Hetzner'
     case 'opencode':
       return 'OpenCode'
+    case 'vercel':
+      return 'Vercel'
     case 'declared':
       return 'Relevé déclaré'
     default:
@@ -76,6 +78,8 @@ export function billingAccountLabel(provider: string, account: string): string {
       return 'Cloud'
     case 'ledger':
       return 'Relevé'
+    case 'team':
+      return 'Équipe'
     default:
       return account.trim() || 'Compte inconnu'
   }

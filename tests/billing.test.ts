@@ -4,6 +4,7 @@ import {
   assembleMonthly,
   assembleRates,
   billingAccountLabel,
+  billingProviderLabel,
   chargesForWindow,
   eurosEquivalent,
   totalsByCurrency,
@@ -129,6 +130,8 @@ describe('billing series', () => {
     expect(billingAccountLabel('opencode', 'b')).toBe('B')
     expect(billingAccountLabel('contabo', 'vps')).toBe('VPS')
     expect(billingAccountLabel('hetzner', 'cloud')).toBe('Cloud')
+    expect(billingAccountLabel('vercel', 'team')).toBe('Équipe')
+    expect(billingProviderLabel('vercel')).toBe('Vercel')
     expect(billingAccountLabel('contabo', 'other')).toBe('other')
   })
 })

@@ -55,7 +55,7 @@ function BillingPage() {
     <DashboardPage
       eyebrow="Dépenses"
       title="Facturation"
-      description="Factures Cloudflare, estimation catalogue Hetzner, et montants déclarés pour Contabo et OpenCode Go. Les libellés viennent du relevé : un rôle, pas un identifiant."
+      description="Factures Cloudflare et Vercel, estimation catalogue Hetzner, et montants déclarés pour Contabo et OpenCode Go. Les libellés sont des rôles, pas des identifiants."
       actions={
         <>
           {report?.mockMode ? (
