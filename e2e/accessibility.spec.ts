@@ -5,7 +5,7 @@ import { gotoHydrated } from './utils'
 for (const [path, heading] of [
   ['/?window=monthly&history=1m', 'Abonnements'],
   ['/consommation?window=1m&source=all', 'Consommation'],
-  ['/facturation?window=1m', 'Facturation'],
+  ['/facturation', 'Facturation'],
 ] as const) {
   test(`WCAG AA — ${heading}`, async ({ page }) => {
     await gotoHydrated(page, path)

@@ -4,18 +4,13 @@ import {
   billingItemLabel,
   billingProviderLabel,
   billingQualityLabel,
-  chargesForWindow,
+  chargesByMonth,
   eurosEquivalent,
+  formatBillingMonth,
   totalsByCurrency,
 } from '~/lib/billing'
 import { formatMoney } from '~/lib/format'
-import type {
-  BillingCharge,
-  BillingMonthly,
-  BillingQuality,
-  BillingRate,
-  SpendWindow,
-} from '~/lib/types'
+import type { BillingCharge, BillingMonthly, BillingQuality, BillingRate } from '~/lib/types'
 import { DataTable, type DataTableColumn } from '../data-table'
 import { MetricCard } from '../metric-card'
 import { Panel } from '../panel'
@@ -57,29 +52,24 @@ function lineLabel(provider: string, account: string, item: string): string {
 export function BillingSummary({
   charges,
   monthly,
-  window,
-  now,
 }: {
   charges: BillingCharge[]
   monthly: BillingMonthly[]
-  window: SpendWindow
-  now: Date
 }) {
-  const visible = chargesForWindow(charges, now, window)
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       <MetricCard
-        label="Facturé sur la période"
-        icon={Receipt}
+        label="Par mois"
+        icon={Wallet}
         tone="primary"
-        value={<MoneyStack rows={visible} />}
-        hint="Chaque charge est rangée au mois de sa date de fin. Le prix en cours n'est pas ajouté."
+        value={<MoneyStack rows={monthly} />}
+        hint="Tarif en cours. Hetzner est le catalogue, pas une facture déjà payée."
       />
       <MetricCard
-        label="Prix en cours"
-        icon={Wallet}
-        value={<MoneyStack rows={monthly} />}
-        hint="Contabo et OpenCode sont des montants déclarés. Hetzner est le catalogue, pas une facture."
+        label="Depuis toujours"
+        icon={Receipt}
+        value={<MoneyStack rows={charges} />}
+        hint="Somme de toutes les factures et des montants déclarés. Le tarif en cours n'est pas ajouté."
       />
     </div>
   )
@@ -171,25 +161,55 @@ const chargeColumns = (rates: BillingRate[]): DataTableColumn<BillingCharge>[] =
   },
 ]
 
+const monthColumns = (): DataTableColumn<{
+  month: string
+  totals: { currency: string; amount: number }[]
+}>[] => [
+  {
+    key: 'month',
+    header: 'Mois',
+    cell: (row) => <span className="capitalize">{formatBillingMonth(row.month)}</span>,
+  },
+  {
+    key: 'amount',
+    header: 'Payé',
+    align: 'right',
+    cell: (row) => (
+      <span className="block text-right">
+        <MoneyStack rows={row.totals} />
+      </span>
+    ),
+  },
+]
+
 export function BillingTables({
   charges,
   monthly,
   rates,
-  window,
-  now,
 }: {
   charges: BillingCharge[]
   monthly: BillingMonthly[]
   rates: BillingRate[]
-  window: SpendWindow
-  now: Date
 }) {
-  const visible = chargesForWindow(charges, now, window)
+  const months = chargesByMonth(charges)
   return (
     <div className="space-y-5">
       <Panel
+        title="Chaque mois"
+        description="Une facture est rangée au mois de sa date de fin. L'estimation Hetzner n'y figure pas."
+      >
+        <DataTable
+          caption="Totaux de chaque mois"
+          columns={monthColumns()}
+          rows={months}
+          getRowId={(row) => row.month}
+          getRowLabel={(row) => formatBillingMonth(row.month)}
+          emptyLabel="Aucune facture"
+        />
+      </Panel>
+      <Panel
         title="Prix en cours"
-        description="OpenCode Go n'a pas de prix dans son API. Une ligne apparaît ici seulement quand le relevé déclaré en contient une."
+        description="Détail du tarif mensuel. OpenCode Go n'a pas de prix dans son API : la ligne existe seulement dans le relevé déclaré."
       >
         <DataTable
           caption="Prix mensuels en cours"
@@ -203,13 +223,13 @@ export function BillingTables({
         />
       </Panel>
       <Panel
-        title="Charges"
-        description="Une ligne par période payée. Une estimation Hetzner n'y figure pas : elle n'est pas une facture."
+        title="Factures"
+        description="Toutes les factures et les montants déclarés, sans filtre de période."
       >
         <DataTable
-          caption="Charges de la période affichée"
+          caption="Toutes les factures"
           columns={chargeColumns(rates)}
-          rows={visible}
+          rows={charges}
           getRowId={(row) =>
             [
               row.provider,
@@ -225,7 +245,7 @@ export function BillingTables({
           getRowLabel={(row) =>
             `${lineLabel(row.provider, row.account, row.item)} ${row.periodEnd}`
           }
-          emptyLabel="Aucune charge sur cette période"
+          emptyLabel="Aucune facture"
         />
       </Panel>
     </div>

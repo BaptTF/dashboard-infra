@@ -6,23 +6,12 @@ import { DashboardPage } from '~/components/dashboard-page'
 import { usePublishFreshness } from '~/components/freshness'
 import { PageSkeleton, QueryState } from '~/components/query-state'
 import { StatusBanner } from '~/components/status-banner'
-import { TimeRangePicker } from '~/components/time-range-picker'
 import { Badge } from '~/components/ui/badge'
 import { UpdateIndicator } from '~/components/update-indicator'
 import { billingAccountLabel, billingProviderLabel } from '~/lib/billing'
-import { normalizeSpendWindow, spendWindowLabel } from '~/lib/dates'
-import { PERIOD_OPTIONS } from '~/lib/period-options'
 import { billingReportQueryOptions } from '~/lib/queries'
-import type { SpendWindow } from '~/lib/types'
-
-interface BillingSearch {
-  window: SpendWindow
-}
 
 export const Route = createFileRoute('/facturation')({
-  validateSearch: (search: Record<string, unknown>): BillingSearch => ({
-    window: normalizeSpendWindow(typeof search.window === 'string' ? search.window : undefined),
-  }),
   loader: async ({ context }) => {
     const request = context.queryClient.prefetchQuery(billingReportQueryOptions())
     if (typeof window === 'undefined') await request
@@ -34,7 +23,6 @@ export const Route = createFileRoute('/facturation')({
 })
 
 function BillingPage() {
-  const search = Route.useSearch()
   const reportQuery = useQuery(billingReportQueryOptions())
   const report = reportQuery.data
   const failed = report?.sources.filter((source) => !source.success) ?? []
@@ -55,7 +43,7 @@ function BillingPage() {
     <DashboardPage
       eyebrow="Dépenses"
       title="Facturation"
-      description="Factures Cloudflare et Vercel, estimation catalogue Hetzner, et montants déclarés pour Contabo et OpenCode Go. Les libellés sont des rôles, pas des identifiants."
+      description="Toutes les factures, le tarif mensuel en cours, et le total payé depuis le début. Les libellés sont des rôles, pas des identifiants."
       actions={
         <>
           {report?.mockMode ? (
@@ -64,12 +52,6 @@ function BillingPage() {
               Mode démonstration
             </Badge>
           ) : null}
-          <TimeRangePicker
-            param="window"
-            value={search.window}
-            options={PERIOD_OPTIONS}
-            label="Période des charges"
-          />
           <UpdateIndicator active={reportQuery.isFetching} />
         </>
       }
@@ -80,7 +62,7 @@ function BillingPage() {
         skeleton={<PageSkeleton cards={2} />}
         isEmpty={(data) => data.charges.length === 0 && data.monthly.length === 0}
         emptyTitle="Aucune facturation"
-        emptyDescription="L'exporter n'a encore publié ni charge ni prix en cours."
+        emptyDescription="L'exporter n'a encore publié ni facture ni prix en cours."
       >
         {(data) => (
           <div className="space-y-5">
@@ -104,22 +86,8 @@ function BillingPage() {
                   .join(', ')}. Une partie de la source n'a pas de prix.`}
               </StatusBanner>
             ) : null}
-            <BillingSummary
-              charges={data.charges}
-              monthly={data.monthly}
-              window={search.window}
-              now={new Date()}
-            />
-            <p className="text-muted-foreground text-sm">
-              Charges affichées : {spendWindowLabel(search.window).toLowerCase()}.
-            </p>
-            <BillingTables
-              charges={data.charges}
-              monthly={data.monthly}
-              rates={data.rates}
-              window={search.window}
-              now={new Date()}
-            />
+            <BillingSummary charges={data.charges} monthly={data.monthly} />
+            <BillingTables charges={data.charges} monthly={data.monthly} rates={data.rates} />
           </div>
         )}
       </QueryState>

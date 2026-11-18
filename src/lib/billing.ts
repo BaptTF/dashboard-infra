@@ -1,4 +1,3 @@
-import { startOfParisMonth, windowBounds } from './dates'
 import { subscriptionDisplayName } from './providers'
 import type {
   BillingCharge,
@@ -7,7 +6,6 @@ import type {
   BillingRate,
   BillingSource,
   MetricSample,
-  SpendWindow,
 } from './types'
 
 const LABEL = /^[a-z0-9][a-z0-9_-]{0,62}$/
@@ -283,26 +281,45 @@ export function assembleSources(
   )
 }
 
-/**
- * A charge belongs to the month of its end date. The window includes that
- * month when the end date falls inside it, through the end of the current
- * Paris month. The current price is not a charge and must not be passed here.
- */
-export function chargeInWindow(periodEnd: string, now: Date, window: SpendWindow): boolean {
-  const end = day(periodEnd)
-  if (!end) return false
-  const at = Date.parse(`${end}T00:00:00Z`)
-  const from = windowBounds(now, window).from.getTime()
-  const until = startOfParisMonth(now, 0).getTime()
-  return at >= from && at < until
+export interface BillingMonthTotal {
+  /** `YYYY-MM` of the charge end date. A charge belongs to that month. */
+  month: string
+  totals: MoneyTotal[]
 }
 
-export function chargesForWindow(
-  charges: BillingCharge[],
-  now: Date,
-  window: SpendWindow,
-): BillingCharge[] {
-  return charges.filter((charge) => chargeInWindow(charge.periodEnd, now, window))
+/**
+ * Sum every charge into the calendar month of its end date, newest first.
+ * The current price is not a charge and must not be passed here.
+ */
+export function chargesByMonth(charges: BillingCharge[]): BillingMonthTotal[] {
+  const rows = new Map<string, { currency: string; amount: number }[]>()
+  for (const charge of charges) {
+    const end = day(charge.periodEnd)
+    if (!end) continue
+    const month = end.slice(0, 7)
+    const bucket = rows.get(month) ?? []
+    bucket.push({ currency: charge.currency, amount: charge.amount })
+    rows.set(month, bucket)
+  }
+  return [...rows.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([month, bucket]) => ({ month, totals: totalsByCurrency(bucket) }))
+}
+
+const monthLabel = new Intl.DateTimeFormat('fr-FR', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+/** `2026-11` becomes `novembre 2026`. An unreadable key is returned as-is. */
+export function formatBillingMonth(month: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(month)
+  if (!match) return month
+  const year = Number(match[1])
+  const mon = Number(match[2])
+  if (mon < 1 || mon > 12) return month
+  return monthLabel.format(new Date(Date.UTC(year, mon - 1, 1)))
 }
 
 export interface MoneyTotal {

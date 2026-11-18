@@ -5,13 +5,12 @@ import {
   assembleRates,
   billingAccountLabel,
   billingProviderLabel,
-  chargesForWindow,
+  chargesByMonth,
   eurosEquivalent,
+  formatBillingMonth,
   totalsByCurrency,
 } from '~/lib/billing'
 import type { MetricSample } from '~/lib/types'
-
-const now = new Date('2026-11-18T12:00:00Z')
 
 function sample(labels: Record<string, string>, value: number): MetricSample {
   return { labels, value }
@@ -107,11 +106,13 @@ describe('billing series', () => {
         8,
       ),
     ])
-    const visible = chargesForWindow(charges, now, '1m')
-    expect(visible.map((charge) => charge.amount)).toEqual([8])
-    expect(totalsByCurrency(visible).map((total) => total.amount)).toEqual([8])
+    const months = chargesByMonth(charges)
+    expect(months.map((entry) => entry.month)).toEqual(['2026-11', '2026-10'])
+    expect(months[0]?.totals).toEqual([{ currency: 'EUR', amount: 8 }])
+    expect(months[1]?.totals).toEqual([{ currency: 'EUR', amount: 7 }])
+    expect(formatBillingMonth('2026-11')).toBe('novembre 2026')
+    expect(totalsByCurrency(charges)).toEqual([{ currency: 'EUR', amount: 15 }])
     expect(totalsByCurrency(monthly)).toEqual([{ currency: 'EUR', amount: 8 }])
-    expect(chargesForWindow(charges, now, '3m')).toHaveLength(2)
   })
 
   it('converts only when a rate is declared', () => {

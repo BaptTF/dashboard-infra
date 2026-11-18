@@ -7,7 +7,6 @@ import { cn } from '~/lib/utils'
 const defaults = {
   '/': { window: 'monthly', history: '1m' },
   '/consommation': { window: '1m', source: 'all', group: 'key' },
-  '/facturation': { window: '1m' },
 } as const
 
 function normalizeSource(value: unknown): SpendSource {
@@ -66,16 +65,8 @@ export function NavLink({
   }
 
   if (to === '/facturation') {
-    const billingSearch = {
-      window: normalizeSpendWindow(typeof search.window === 'string' ? search.window : undefined),
-    }
     return (
-      <Link
-        to="/facturation"
-        search={active ? billingSearch : defaults['/facturation']}
-        aria-current={active ? 'page' : undefined}
-        className={linkClassName}
-      >
+      <Link to="/facturation" aria-current={active ? 'page' : undefined} className={linkClassName}>
         {content}
       </Link>
     )
