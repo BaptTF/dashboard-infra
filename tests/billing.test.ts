@@ -8,6 +8,7 @@ import {
   chargesByMonth,
   eurosEquivalent,
   formatBillingMonth,
+  oneTimeCharges,
   totalsByCurrency,
 } from '~/lib/billing'
 import type { MetricSample } from '~/lib/types'
@@ -125,6 +126,70 @@ describe('billing series', () => {
     expect(eurosEquivalent(10, 'USD', rates)).toBeCloseTo(9.2)
     expect(eurosEquivalent(10, 'EUR', rates)).toBe(10)
     expect(eurosEquivalent(10, 'GBP', rates)).toBeNull()
+  })
+
+  it('keeps a top-up out of the monthly price', () => {
+    const charges = assembleCharges([
+      sample(
+        {
+          provider: 'opencode',
+          account: 'b',
+          item: 'go',
+          resource: 'go',
+          currency: 'USD',
+          quality: 'declared',
+          period_start: '2026-10-24',
+          period_end: '2026-11-24',
+        },
+        10,
+      ),
+      sample(
+        {
+          provider: 'vercel',
+          account: 'team',
+          item: 'invoice',
+          resource: 'topup',
+          currency: 'USD',
+          quality: 'invoice',
+          period_start: '2026-11-17',
+          period_end: '2026-11-17',
+        },
+        12.71,
+      ),
+      sample(
+        {
+          provider: 'cloudflare',
+          account: 'main',
+          item: 'invoice',
+          resource: 'invoice-demo',
+          currency: 'EUR',
+          quality: 'invoice',
+          period_start: '2026-11-01',
+          period_end: '2026-11-01',
+        },
+        4.2,
+      ),
+    ])
+    const monthly = assembleMonthly([
+      sample(
+        {
+          provider: 'opencode',
+          account: 'b',
+          item: 'go',
+          resource: 'go',
+          currency: 'USD',
+          quality: 'declared',
+        },
+        10,
+      ),
+    ])
+    const oneTime = oneTimeCharges(charges, monthly)
+    expect(oneTime.map((charge) => charge.provider).sort()).toEqual(['cloudflare', 'vercel'])
+    expect(totalsByCurrency(oneTime)).toEqual([
+      { currency: 'EUR', amount: 4.2 },
+      { currency: 'USD', amount: 12.71 },
+    ])
+    expect(totalsByCurrency(monthly)).toEqual([{ currency: 'USD', amount: 10 }])
   })
 
   it('shows role labels and leaves an unknown account as published', () => {

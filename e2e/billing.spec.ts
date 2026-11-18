@@ -19,6 +19,14 @@ test('facturation shows the monthly price, the lifetime total, and every invoice
   await expect(monthly).toContainText('20,50')
   await expect(monthly).toContainText('10,00')
 
+  const oneTime = page
+    .getByText('Achats ponctuels', { exact: true })
+    .locator('xpath=ancestor::div[contains(@class,"rounded")]')
+    .first()
+  await expect(oneTime).toContainText('4,20')
+  await expect(oneTime).not.toContainText('10,00')
+  await expect(oneTime).not.toContainText('12,50')
+
   const lifetime = page
     .getByText('Depuis toujours', { exact: true })
     .locator('xpath=ancestor::div[contains(@class,"rounded")]')
@@ -32,6 +40,12 @@ test('facturation shows the monthly price, the lifetime total, and every invoice
   await expect(page.getByRole('table', { name: 'Prix mensuels en cours' })).toContainText(
     'Estimation',
   )
+
+  const punctual = page.getByRole('table', { name: 'Liste des achats ponctuels' })
+  await expect(punctual).toContainText('Cloudflare')
+  await expect(punctual).not.toContainText('Contabo')
+  await expect(punctual).not.toContainText('OpenCode')
+  await expect(punctual).not.toContainText('Hetzner')
 
   const invoices = page.getByRole('table', { name: 'Toutes les factures' })
   await expect(invoices).toContainText('Contabo')

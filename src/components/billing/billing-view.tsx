@@ -1,4 +1,4 @@
-import { Receipt, Wallet } from 'lucide-react'
+import { Receipt, ShoppingBag, Wallet } from 'lucide-react'
 import {
   billingAccountLabel,
   billingItemLabel,
@@ -7,6 +7,7 @@ import {
   chargesByMonth,
   eurosEquivalent,
   formatBillingMonth,
+  oneTimeCharges,
   totalsByCurrency,
 } from '~/lib/billing'
 import { formatMoney } from '~/lib/format'
@@ -57,7 +58,7 @@ export function BillingSummary({
   monthly: BillingMonthly[]
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-3">
       <MetricCard
         label="Par mois"
         icon={Wallet}
@@ -66,10 +67,16 @@ export function BillingSummary({
         hint="Tarif en cours. Hetzner est le catalogue, pas une facture déjà payée."
       />
       <MetricCard
+        label="Achats ponctuels"
+        icon={ShoppingBag}
+        value={<MoneyStack rows={oneTimeCharges(charges, monthly)} />}
+        hint="Factures sans abonnement, comme un top-up. Déjà comprises dans Depuis toujours."
+      />
+      <MetricCard
         label="Depuis toujours"
         icon={Receipt}
         value={<MoneyStack rows={charges} />}
-        hint="Somme de toutes les factures et des montants déclarés. Le tarif en cours n'est pas ajouté."
+        hint="Abonnements et achats ponctuels. Le tarif en cours n'est pas ajouté."
       />
     </div>
   )
@@ -192,8 +199,35 @@ export function BillingTables({
   rates: BillingRate[]
 }) {
   const months = chargesByMonth(charges)
+  const oneTime = oneTimeCharges(charges, monthly)
   return (
     <div className="space-y-5">
+      <Panel
+        title="Achats ponctuels"
+        description="Factures qui ne correspondent à aucun tarif mensuel. Le top-up Vercel est ici."
+      >
+        <DataTable
+          caption="Liste des achats ponctuels"
+          columns={chargeColumns(rates)}
+          rows={oneTime}
+          getRowId={(row) =>
+            [
+              row.provider,
+              row.account,
+              row.item,
+              row.resource,
+              row.currency,
+              row.quality,
+              row.periodStart,
+              row.periodEnd,
+            ].join(':')
+          }
+          getRowLabel={(row) =>
+            `${lineLabel(row.provider, row.account, row.item)} ${row.periodEnd}`
+          }
+          emptyLabel="Aucun achat ponctuel"
+        />
+      </Panel>
       <Panel
         title="Chaque mois"
         description="Une facture est rangée au mois de sa date de fin. L'estimation Hetzner n'y figure pas."

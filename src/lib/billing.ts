@@ -327,6 +327,21 @@ export interface MoneyTotal {
   amount: number
 }
 
+/**
+ * Charges with no current monthly price for the same provider, account and
+ * item. A top-up or a one-off invoice lands here. A subscription that also
+ * publishes a monthly price does not.
+ */
+export function oneTimeCharges(
+  charges: BillingCharge[],
+  monthly: BillingMonthly[],
+): BillingCharge[] {
+  const recurring = new Set(monthly.map((row) => `${row.provider}\0${row.account}\0${row.item}`))
+  return charges.filter(
+    (charge) => !recurring.has(`${charge.provider}\0${charge.account}\0${charge.item}`),
+  )
+}
+
 export function totalsByCurrency(rows: { currency: string; amount: number }[]): MoneyTotal[] {
   const sums = new Map<string, number>()
   for (const row of rows) {
